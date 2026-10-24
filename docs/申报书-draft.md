@@ -6,7 +6,7 @@
 
 - **项目名称**：MoonCrawl：MoonBit 的声明式网页采集框架
 - **参赛者**：guangting0905
-- **联系方式**：【提交前填写：手机号/微信】
+- **联系方式**：2187647636@qq.com
 - **GitHub 仓库链接**：https://github.com/guangting0905/mooncrawl.git
 - **项目方向**：MoonBit 数据采集基础库 / 数据处理基础设施
 - **是否为移植项目**：否（原创实现；复用 moonbitlang/async、moonbit-community/html 等生态积木，均已按 Apache-2.0 声明）
