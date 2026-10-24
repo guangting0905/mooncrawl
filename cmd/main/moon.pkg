@@ -1,0 +1,5 @@
+import {
+  "guangting0905/mooncrawl",
+}
+
+pkgtype(kind: "executable")
