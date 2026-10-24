@@ -131,7 +131,14 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 - [x] JSONL/CSV 导出（D5）
 - [x] 真实站点演示 + CLI（D5）
 - [x] CI 双目标门禁（D6）
-- [ ] mooncakes.io 上架（需 mooncakes 账号登录后 `moon publish`）
+- [x] mooncakes.io 上架准备（包名 `guangting0905/mooncrawl`，`moon publish --dry-run` 就绪）
+
+上架步骤（需 mooncakes 账号，GitHub OAuth 登录一次即可）：
+
+```bash
+moon login        # 浏览器完成 GitHub OAuth
+moon publish      # 正式上架 mooncakes.io
+```
 
 后续方向（季度/年度持续建设）：
 
