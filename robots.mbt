@@ -296,10 +296,17 @@ fn trim_str(s : String) -> String {
   let cs = chars_of(s)
   let mut a : Int32 = 0
   let mut b : Int32 = cs.length()
-  while a < b && (cs[a] == ' ' || cs[a] == '\t' || cs[a] == '\r') {
+  while a < b &&
+        (cs[a] == ' ' || cs[a] == '\t' || cs[a] == '\r' || cs[a] == '\n') {
     a = a + 1
   }
-  while b > a && (cs[b - 1] == ' ' || cs[b - 1] == '\t' || cs[b - 1] == '\r') {
+  while b > a &&
+        (
+          cs[b - 1] == ' ' ||
+          cs[b - 1] == '\t' ||
+          cs[b - 1] == '\r' ||
+          cs[b - 1] == '\n'
+        ) {
     b = b - 1
   }
   slice(cs, a, b)

@@ -1,5 +1,7 @@
 import {
   "guangting0905/mooncrawl",
+  "moonbitlang/core/argparse",
+  "moonbitlang/async",
 }
 
 pkgtype(kind: "executable")

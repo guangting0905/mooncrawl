@@ -1,5 +1,5 @@
 import {
-  "moonbit-community/html/src",
+  "moonbit-community/html/src" @html,
   "moonbitlang/async",
   "moonbitlang/async/http",
 }

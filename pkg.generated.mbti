@@ -1,0 +1,108 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "guangting0905/mooncrawl"
+
+// Values
+pub async fn crawl(String, CrawlOptions, async (String, String) -> FetchOutcome, (PageResult) -> Unit) -> CrawlStats
+
+pub fn csv_escape(String) -> String
+
+pub fn csv_header() -> String
+
+pub fn csv_page(PageResult) -> String
+
+pub fn csv_row(Array[String]) -> String
+
+pub fn extract_links(String) -> Array[String]
+
+pub fn extract_text(String) -> String
+
+pub fn extract_title(String) -> String?
+
+pub async fn http_fetch(String, String) -> FetchOutcome
+
+pub fn json_escape(String) -> String
+
+pub fn jsonl_page(PageResult) -> String
+
+pub fn normalize_url(Url) -> String
+
+pub fn parse_robots(String) -> RobotsRules
+
+pub fn parse_url(String) -> Url?
+
+pub fn resolve_url(Url, String) -> Url?
+
+// Errors
+
+// Types and methods
+pub struct Bloom {
+  // private fields
+}
+pub fn Bloom::add(Self, String) -> Unit
+pub fn Bloom::maybe_contains(Self, String) -> Bool
+pub fn Bloom::new(Int32) -> Self
+
+pub(all) struct CrawlOptions {
+  max_pages : Int32
+  max_depth : Int32
+  delay_ms : Int32
+  respect_robots : Bool
+  user_agent : String
+}
+pub fn CrawlOptions::default() -> Self
+
+pub struct CrawlStats {
+  mut pages_fetched : Int32
+  mut pages_ok : Int32
+  mut pages_failed : Int32
+  mut pages_skipped_robots : Int32
+  mut links_discovered : Int32
+  mut robots_unreachable : Int32
+}
+
+pub(all) struct FetchOutcome {
+  status : Int32
+  body : String
+  error : String?
+}
+
+pub struct Frontier {
+  // private fields
+}
+pub fn Frontier::is_empty(Self) -> Bool
+pub fn Frontier::length(Self) -> Int32
+pub fn Frontier::mark_seen(Self, String) -> Unit
+pub fn Frontier::new(Int32) -> Self
+pub fn Frontier::next_allowed_ms(Self, String, Int32) -> Int32
+pub fn Frontier::pop(Self) -> String?
+pub fn Frontier::push(Self, String) -> Bool
+pub fn Frontier::record_visit(Self, String, Int32) -> Unit
+
+pub(all) struct PageResult {
+  url : String
+  status : Int32
+  depth : Int32
+  links_found : Int32
+  title : String?
+  error : String?
+}
+
+pub struct RobotsRules {
+  // private fields
+}
+pub fn RobotsRules::allowed(Self, String, String) -> Bool
+pub fn RobotsRules::allowed_url(Self, String, Url) -> Bool
+pub fn RobotsRules::crawl_delay_ms(Self, String) -> Int32?
+pub fn RobotsRules::sitemaps(Self) -> Array[String]
+
+pub struct Url {
+  scheme : String
+  host : String
+  port : Int32?
+  path : String
+  query : String?
+}
+
+// Type aliases
+
+// Traits
