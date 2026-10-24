@@ -12,7 +12,7 @@
 pub struct Url {
   scheme : String // 小写，"http" 或 "https"
   host : String // 小写（ASCII）
-  port : Int? // None 表示协议默认端口
+  port : Int32? // None 表示协议默认端口
   path : String // 以 '/' 开头
   query : String? // 不含 '?'
 }
@@ -27,9 +27,9 @@ fn chars_of(s : String) -> Array[Char] {
 }
 
 ///|
-fn slice(cs : Array[Char], start : Int, end_ : Int) -> String {
+fn slice(cs : Array[Char], start : Int32, end_ : Int32) -> String {
   let buf = StringBuilder()
-  let mut i : Int = start
+  let mut i : Int32 = start
   while i < end_ {
     buf.write_char(cs[i])
     i = i + 1
@@ -38,9 +38,9 @@ fn slice(cs : Array[Char], start : Int, end_ : Int) -> String {
 }
 
 ///|
-fn ascii_lower_slice(cs : Array[Char], a : Int, b : Int) -> String {
+fn ascii_lower_slice(cs : Array[Char], a : Int32, b : Int32) -> String {
   let buf = StringBuilder()
-  let mut i : Int = a
+  let mut i : Int32 = a
   while i < b {
     let c = cs[i]
     if c >= 'A' && c <= 'Z' {
@@ -59,15 +59,15 @@ fn ascii_lower_str(s : String) -> String {
 }
 
 ///|
-fn find_from(cs : Array[Char], needle : Array[Char], from : Int) -> Int? {
-  let n : Int = cs.length()
-  let m : Int = needle.length()
+fn find_from(cs : Array[Char], needle : Array[Char], from : Int32) -> Int32? {
+  let n : Int32 = cs.length()
+  let m : Int32 = needle.length()
   if m == 0 {
     return Some(from)
   }
-  let mut i : Int = from
+  let mut i : Int32 = from
   while i + m <= n {
-    let mut j : Int = 0
+    let mut j : Int32 = 0
     let mut ok : Bool = true
     while j < m {
       if cs[i + j] != needle[j] {
@@ -85,8 +85,8 @@ fn find_from(cs : Array[Char], needle : Array[Char], from : Int) -> Int? {
 }
 
 ///|
-fn find_char_from_last(cs : Array[Char], c : Char) -> Int? {
-  let mut i : Int = cs.length() - 1
+fn find_char_from_last(cs : Array[Char], c : Char) -> Int32? {
+  let mut i : Int32 = cs.length() - 1
   while i >= 0 {
     if cs[i] == c {
       return Some(i)
@@ -99,10 +99,14 @@ fn find_char_from_last(cs : Array[Char], c : Char) -> Int? {
 ///|
 /// 拆分 host[:port]。支持 '[IPv6]' 字面量与 userinfo 之后的尾部。
 /// 端口非法时返回 None。
-fn split_port(hp : Array[Char], start : Int, end_ : Int) -> (String, Int?)? {
-  let mut colon : Int = -1
+fn split_port(
+  hp : Array[Char],
+  start : Int32,
+  end_ : Int32,
+) -> (String, Int32?)? {
+  let mut colon : Int32 = -1
   let mut in_brackets : Bool = false
-  let mut i : Int = start
+  let mut i : Int32 = start
   while i < end_ {
     let c = hp[i]
     if c == '[' {
@@ -119,12 +123,12 @@ fn split_port(hp : Array[Char], start : Int, end_ : Int) -> (String, Int?)? {
     return Some((slice(hp, start, end_), None))
   }
   let host = slice(hp, start, colon)
-  let mut j : Int = colon + 1
+  let mut j : Int32 = colon + 1
   if j == end_ {
     // "host:" 视为无端口
     return Some((host, None))
   }
-  let mut p : Int = 0
+  let mut p : Int32 = 0
   while j < end_ {
     let c = hp[j]
     if c >= '0' && c <= '9' {
@@ -145,10 +149,10 @@ fn split_port(hp : Array[Char], start : Int, end_ : Int) -> (String, Int?)? {
 /// 非绝对地址、非 http(s) 协议或端口非法时返回 None。
 pub fn parse_url(input : String) -> Url? {
   let s = chars_of(input)
-  let full_n : Int = s.length()
+  let full_n : Int32 = s.length()
   // fragment 分隔符全局截断：'#' 之后不参与解析
-  let mut n : Int = full_n
-  let mut fi : Int = 0
+  let mut n : Int32 = full_n
+  let mut fi : Int32 = 0
   while fi < full_n {
     if s[fi] == '#' {
       n = fi
@@ -164,12 +168,12 @@ pub fn parse_url(input : String) -> Url? {
   if scheme != "http" && scheme != "https" {
     return None
   }
-  let after : Int = sep_at + 3
+  let after : Int32 = sep_at + 3
   // authority 结束于第一个 '/' 或 '?'
-  let mut auth_end : Int = n
-  let mut path_start : Int = n
-  let mut query_start : Int = -1
-  let mut i : Int = after
+  let mut auth_end : Int32 = n
+  let mut path_start : Int32 = n
+  let mut query_start : Int32 = -1
+  let mut i : Int32 = after
   while i < n {
     let c = s[i]
     if c == '/' {
@@ -185,7 +189,7 @@ pub fn parse_url(input : String) -> Url? {
     i = i + 1
   }
   if query_start < 0 && path_start < n {
-    let mut j : Int = path_start
+    let mut j : Int32 = path_start
     while j < n {
       if s[j] == '?' {
         query_start = j
@@ -195,8 +199,8 @@ pub fn parse_url(input : String) -> Url? {
     }
   }
   // authority 取最后一个 '@' 之后的部分（丢弃 userinfo）
-  let mut hp_start : Int = after
-  let mut k : Int = after
+  let mut hp_start : Int32 = after
+  let mut k : Int32 = after
   while k < auth_end {
     if s[k] == '@' {
       hp_start = k + 1
@@ -227,7 +231,7 @@ pub fn parse_url(input : String) -> Url? {
 }
 
 ///|
-fn is_default_port(scheme : String, p : Int) -> Bool {
+fn is_default_port(scheme : String, p : Int32) -> Bool {
   (scheme == "http" && p == 80) || (scheme == "https" && p == 443)
 }
 
@@ -235,13 +239,13 @@ fn is_default_port(scheme : String, p : Int) -> Bool {
 /// 折叠路径中的 '.' / '..' 段与重复斜杠，保留结尾斜杠语义。
 fn normalize_path(p : String) -> String {
   let cs = chars_of(p)
-  let n : Int = cs.length()
+  let n : Int32 = cs.length()
   if n == 0 {
     return "/"
   }
   let segs : Array[String] = []
-  let mut start : Int = 1
-  let mut i : Int = 1
+  let mut start : Int32 = 1
+  let mut i : Int32 = 1
   let mut trailing : Bool = false
   while i <= n {
     if i == n || cs[i] == '/' {
@@ -283,11 +287,11 @@ fn normalize_path(p : String) -> String {
 }
 
 ///|
-fn str_cmp(a : String, b : String) -> Int {
+fn str_cmp(a : String, b : String) -> Int32 {
   let ac = chars_of(a)
   let bc = chars_of(b)
   let n = if ac.length() < bc.length() { ac.length() } else { bc.length() }
-  let mut i : Int = 0
+  let mut i : Int32 = 0
   while i < n {
     let ca = ac[i].to_int()
     let cb = bc[i].to_int()
@@ -300,7 +304,7 @@ fn str_cmp(a : String, b : String) -> Int {
 }
 
 ///|
-fn pair_cmp(x : (String, Bool, String), y : (String, Bool, String)) -> Int {
+fn pair_cmp(x : (String, Bool, String), y : (String, Bool, String)) -> Int32 {
   let (k1, h1, v1) = x
   let (k2, h2, v2) = y
   let c = str_cmp(k1, k2)
@@ -318,10 +322,10 @@ fn pair_cmp(x : (String, Bool, String), y : (String, Bool, String)) -> Int {
 /// query 参数按 key（再按 value）字典序排序后重组。
 fn normalize_query(q : String) -> String {
   let cs = chars_of(q)
-  let n : Int = cs.length()
+  let n : Int32 = cs.length()
   let pairs : Array[(String, Bool, String)] = []
-  let mut start : Int = 0
-  let mut i : Int = 0
+  let mut start : Int32 = 0
+  let mut i : Int32 = 0
   while i <= n {
     if i == n || cs[i] == '&' {
       if i > start {
@@ -339,11 +343,11 @@ fn normalize_query(q : String) -> String {
     }
   }
   // 插入排序：单个 URL 的参数数量很小
-  let len : Int = pairs.length()
-  let mut a : Int = 1
+  let len : Int32 = pairs.length()
+  let mut a : Int32 = 1
   while a < len {
     let cur = pairs[a]
-    let mut b : Int = a - 1
+    let mut b : Int32 = a - 1
     while b >= 0 && pair_cmp(pairs[b], cur) > 0 {
       pairs[b + 1] = pairs[b]
       b = b - 1
@@ -406,7 +410,7 @@ fn starts_with_root(pp : String) -> Bool {
 /// 检测 href 是否以非 http(s) 的 scheme 前缀开头
 /// （javascript:、mailto: 等），是则拒绝解析。
 fn has_foreign_scheme(h : Array[Char]) -> Bool {
-  let n : Int = h.length()
+  let n : Int32 = h.length()
   if n == 0 {
     return false
   }
@@ -414,7 +418,7 @@ fn has_foreign_scheme(h : Array[Char]) -> Bool {
   if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z')) {
     return false
   }
-  let mut i : Int = 0
+  let mut i : Int32 = 0
   while i < n {
     let c = h[i]
     if c == ':' {
@@ -437,7 +441,7 @@ fn has_foreign_scheme(h : Array[Char]) -> Bool {
 /// 空地址、纯 fragment、javascript:/mailto: 等非 http(s) 地址返回 None。
 pub fn resolve_url(base : Url, href : String) -> Url? {
   let h = chars_of(href.trim().to_owned())
-  let hn : Int = h.length()
+  let hn : Int32 = h.length()
   if hn == 0 {
     return None
   }
@@ -448,8 +452,8 @@ pub fn resolve_url(base : Url, href : String) -> Url? {
     return None
   }
   // 丢弃 fragment
-  let mut end2 : Int = hn
-  let mut f : Int = 0
+  let mut end2 : Int32 = hn
+  let mut f : Int32 = 0
   while f < hn {
     if h[f] == '#' {
       end2 = f
@@ -461,7 +465,7 @@ pub fn resolve_url(base : Url, href : String) -> Url? {
     return None
   }
   // 绝对地址
-  let mut a : Int = 0
+  let mut a : Int32 = 0
   while a + 3 <= end2 {
     if h[a] == ':' && h[a + 1] == '/' && h[a + 2] == '/' {
       return parse_url(slice(h, 0, end2))
@@ -482,8 +486,8 @@ pub fn resolve_url(base : Url, href : String) -> Url? {
       query: Some(slice(h, 1, end2)),
     })
   }
-  let mut qpos : Int = -1
-  let mut q : Int = 0
+  let mut qpos : Int32 = -1
+  let mut q : Int32 = 0
   while q < end2 {
     if h[q] == '?' {
       qpos = q

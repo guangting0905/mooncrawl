@@ -13,3 +13,8 @@ keywords = [ "crawler", "spider", "web-harvesting", "url", "data-collection" ]
 preferred_target = "native"
 
 description = "A declarative web-harvesting framework for MoonBit: URL normalization, polite crawling, HTML pipelines and structured export."
+
+import {
+  "moonbit-community/html@0.2.2",
+  "moonbitlang/async@0.22.5",
+}

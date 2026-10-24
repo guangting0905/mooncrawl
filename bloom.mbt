@@ -9,14 +9,14 @@
 /// 固定容量布隆过滤器。
 pub struct Bloom {
   priv bits : Array[Bool]
-  priv m : Int
-  priv k : Int
+  priv m : Int32
+  priv k : Int32
 }
 
 ///|
 /// 创建期望容纳 `expected_items` 个元素的过滤器。
 /// 每元素分配 16 位、7 个哈希函数，误报率约 0.06%。
-pub fn Bloom::new(expected_items : Int) -> Bloom {
+pub fn Bloom::new(expected_items : Int32) -> Bloom {
   let m = if expected_items < 64 { 1024 } else { expected_items * 16 }
   let k = 7
   let bits : Array[Bool] = []

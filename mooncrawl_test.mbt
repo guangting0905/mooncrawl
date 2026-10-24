@@ -102,12 +102,12 @@ test "resolve_url: 非 http 地址被拒" {
 ///|
 test "bloom: 已添加键必命中" {
   let b = @mooncrawl.Bloom::new(500)
-  let mut i : Int = 0
+  let mut i : Int32 = 0
   while i < 500 {
     b.add("https://example.com/page/" + i.to_string())
     i = i + 1
   }
-  let mut j : Int = 0
+  let mut j : Int32 = 0
   while j < 500 {
     assert_true(b.maybe_contains("https://example.com/page/" + j.to_string()))
     j = j + 1
@@ -117,13 +117,13 @@ test "bloom: 已添加键必命中" {
 ///|
 test "bloom: 未添加键误报率低于 2%" {
   let b = @mooncrawl.Bloom::new(500)
-  let mut i : Int = 0
+  let mut i : Int32 = 0
   while i < 500 {
     b.add("https://example.com/page/" + i.to_string())
     i = i + 1
   }
-  let mut fp : Int = 0
-  let mut j : Int = 0
+  let mut fp : Int32 = 0
+  let mut j : Int32 = 0
   while j < 1000 {
     if b.maybe_contains("https://other.com/x/" + j.to_string()) {
       fp = fp + 1
