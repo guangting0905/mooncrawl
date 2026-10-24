@@ -113,10 +113,11 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 
 ## 工程实践
 
-- **持续提交**：每个模块独立 commit，commit message 标注测试数并关联 Issue。
+- **持续提交**：提交历史按模块推进，功能提交的 message 标注测试数并关联 Issue。
 - **双目标 CI**：GitHub Actions 在 js 与 native 后端跑全量测试 + `moon fmt` 门禁。
-- **Issue 驱动**：立项时建 10 个 Issue 作为看板，随里程碑关闭。
+- **Issue 驱动**：立项时建 10 个 Issue 作为看板，随里程碑关闭并附交付说明。
 - **接口稳定**：`moon info` 生成 `.mbti` 接口文件入库，重构可见性有据可查。
+- **零告警**：`moon check` 无警告无错误，`moon fmt` 无diff。
 
 ## 路线图
 

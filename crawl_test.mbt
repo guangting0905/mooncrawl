@@ -9,7 +9,7 @@ fn fake_site(
     let (k, v) = e
     let _ = site.set(k, v)
   }
-  async fn(url : String, _ua : String) -> @mooncrawl.FetchOutcome {
+  fn(url : String, _ua : String) -> @mooncrawl.FetchOutcome {
     match site.get(url) {
       Some(o) => o
       None => { status: 0, body: "", error: Some("no such page"), }
