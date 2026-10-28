@@ -12,7 +12,7 @@ keywords = [ "crawler", "spider", "web-harvesting", "url", "data-collection" ]
 
 preferred_target = "native"
 
-description = "A declarative web-harvesting framework for MoonBit: URL normalization, polite crawling, HTML pipelines and structured export."
+description = "A web crawling framework for MoonBit: URL normalization, RFC 9309 robots handling, polite async scheduling, CSS-selector extraction and structured export."
 
 import {
   "moonbit-community/html@0.2.2",
