@@ -345,9 +345,11 @@ async test "crawl: 非法种子返回全零统计" {
 ///|
 /// 多 host 假站点：种子在 a.test，链接到 b.test 与 c.test。
 /// 抓取时记录同时在途的请求数峰值，用来验证并行度。
-async fn multi_host_peak(concurrency : Int32) -> Int32 {
+async fn multi_host_peak(concurrency : Int32) -> (Int32, Bool) {
   let active = [0]
   let peak = [0]
+  // 每个任务必须拿到自己的 URL：闭包若按引用捕获循环变量，这里会露馅
+  let hits = [false, false, false]
   let fetch = async fn(url : String, _ua : String) -> @mooncrawl.FetchOutcome {
     active[0] = active[0] + 1
     if active[0] > peak[0] {
@@ -355,7 +357,14 @@ async fn multi_host_peak(concurrency : Int32) -> Int32 {
     }
     @async.sleep(10)
     active[0] = active[0] - 1
+    if url == "https://b.test/" {
+      hits[1] = true
+    }
+    if url == "https://c.test/" {
+      hits[2] = true
+    }
     if url == "https://a.test/" {
+      hits[0] = true
       return {
         status: 200,
         body: "<html><body><a href=\"https://b.test/\">b</a>" +
@@ -381,17 +390,19 @@ async fn multi_host_peak(concurrency : Int32) -> Int32 {
     fn(_p) { () },
   )
   assert_eq(stats.pages_ok, 3)
-  peak[0]
+  (peak[0], hits[0] && hits[1] && hits[2])
 }
 
 ///|
-async test "crawl: 跨 host 并行（max_concurrency>1）" {
-  let peak = multi_host_peak(3)
+async test "crawl: 跨 host 并行且每个任务拿到自己的 URL" {
+  let (peak, all_hit) = multi_host_peak(3)
   assert_true(peak >= 2)
+  assert_true(all_hit)
 }
 
 ///|
 async test "crawl: max_concurrency=1 时完全串行" {
-  let peak = multi_host_peak(1)
+  let (peak, all_hit) = multi_host_peak(1)
   assert_eq(peak, 1)
+  assert_true(all_hit)
 }
