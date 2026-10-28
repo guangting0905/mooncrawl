@@ -1,13 +1,23 @@
-// robots.txt 解析与匹配（RFC 9309 实用子集）。
+// robots.txt 解析与匹配。
 //
-// Polite crawling 的第一道闸门：引擎在抓取任何 URL 前先用本模块
-// 判定是否允许，并读取 Crawl-delay 作为限速下限。
+// 覆盖范围（逐条对应 RFC 9309，详见 docs/rfc9309-覆盖声明.md）：
+// - §2.2.1 组选择：product token 大小写不敏感前缀匹配；多个组匹配同一
+//   UA 时**合并**为一组解析；无具体匹配时回退 `*` 组；都没有则无规则。
+// - §2.2.2 匹配：从路径第一个字节起匹配，最具体（最多字节）的规则胜出；
+//   Allow 与 Disallow 等长时 Allow 优先；组内无规则则允许；/robots.txt
+//   隐式允许。
+// - §2.2.3 特殊字符：`#` 行内注释、`*` 任意序列、`$` 锚定结尾。
+//
+// 不在覆盖范围内（明确不承诺）：
+// - §2.2.2 的百分号解码比较：`%7E` 与 `~` 不视为同一路径。
+// - §2.3.1.2 重定向链：跟随行为交给传输层，本模块不解析重定向。
+// - §2.4 缓存时效、§2.5 500 KiB 解析上限：由调用方（引擎/用户）决定。
+// 状态码语义（4xx 放行 / 5xx 拒绝）在 crawl.mbt 中实现，见 RobotsPolicy。
 //
 // 匹配约定与主流实现一致：
-// - 组选择：与目标 UA 前缀匹配的组里取「最长 agent 前缀」的组；
-//   没有匹配组时回退到 `*` 组；连 `*` 组都没有则允许一切。
 // - 规则匹配：`*` 匹配任意序列，结尾 `$` 锚定路径末尾；
 //   Allow/Disallow 同时命中时取模式更长的；等长时 Allow 优先。
+// - Crawl-delay 不是 RFC 9309 内容，属广泛部署的扩展；合并组时取最大值。
 
 ///|
 /// 解析后的 robots.txt 规则集。
@@ -150,6 +160,26 @@ fn parse_delay_ms(v : String) -> Int32? {
 }
 
 ///|
+/// 去掉 UTF-8 BOM 与开头空白。带 BOM 的文件若原样解析，第一条
+/// `User-agent` 行会因前导 U+FEFF 变成无法识别的指令，整组规则失效。
+fn strip_leading_noise(text : String) -> String {
+  let cs = chars_of(text)
+  let n : Int32 = cs.length()
+  let mut i : Int32 = 0
+  if n > 0 && cs[0] == '\u{FEFF}' {
+    i = 1
+  }
+  while i < n &&
+        (cs[i] == ' ' || cs[i] == '\t' || cs[i] == '\r' || cs[i] == '\n') {
+    i = i + 1
+  }
+  if i == 0 {
+    return text
+  }
+  slice(cs, i, n)
+}
+
+///|
 /// 依据待归属的 UA 列表创建新组；无 UA 声明时归入隐式 * 组。
 fn new_group(pending : Array[String]) -> AgentGroup {
   let agents = if pending.length() > 0 { pending } else { ["*"] }
@@ -164,7 +194,7 @@ pub fn parse_robots(text : String) -> RobotsRules {
   let sitemaps : Array[String] = []
   let mut pending : Array[String] = []
   let mut cur : AgentGroup? = None
-  let lines = split_lines(text)
+  let lines = split_lines(strip_leading_noise(text))
   for line in lines {
     // 去注释
     let hash = find_char(line, '#')
@@ -336,32 +366,122 @@ fn split_lines(text : String) -> Array[String] {
 }
 
 ///|
-/// 选择适用组：agent 前缀最长匹配；无具体匹配回退 '*' 组。
-fn select_group(rules : RobotsRules, agent : String) -> AgentGroup? {
+/// 该组与 agent 的最长 product token 前缀长度；不匹配返回 -1。
+/// `*` 不参与具体匹配，由 `has_wildcard` 单独处理。
+fn agent_prefix_len(g : AgentGroup, agent : String) -> Int32 {
+  let mut best : Int32 = -1
+  for ag in g.agents {
+    if ag != "*" && starts_with(agent, ag) && ag.length() > best {
+      best = ag.length()
+    }
+  }
+  best
+}
+
+///|
+fn has_wildcard(g : AgentGroup) -> Bool {
+  for ag in g.agents {
+    if ag == "*" {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// 合并后的生效规则集：规则按文件顺序拼接，Crawl-delay 取最大值。
+priv struct EffectiveRules {
+  rules : Array[(Bool, String)]
+  crawl_delay_ms : Int32?
+}
+
+///|
+/// 按 RFC 9309 §2.2.1 选出并合并适用组：
+/// 1. 所有与 product token 前缀匹配的组里，取最长的 token 长度；
+/// 2. 长度等于该值的**全部**组合并（同名 UA 分散在多处时规则累加）；
+/// 3. 没有任何具体匹配时，合并全部 `*` 组；
+/// 4. 都没有则为空规则集（无规则适用 → 允许）。
+fn effective_rules(rules : RobotsRules, agent : String) -> EffectiveRules {
   let a = lower_str(agent)
-  let mut best : AgentGroup? = None
   let mut best_len : Int32 = -1
   for g in rules.groups {
-    for ag in g.agents {
-      if ag != "*" && starts_with(a, ag) && ag.length() > best_len {
-        best = Some(g)
-        best_len = ag.length()
-      }
+    let l = agent_prefix_len(g, a)
+    if l > best_len {
+      best_len = l
     }
   }
-  match best {
-    Some(_) => best
-    None => {
-      for g in rules.groups {
-        for ag in g.agents {
-          if ag == "*" {
-            return Some(g)
+  let out : Array[(Bool, String)] = []
+  let mut delay : Int32? = None
+  for g in rules.groups {
+    let hit = if best_len >= 0 {
+      agent_prefix_len(g, a) == best_len
+    } else {
+      has_wildcard(g)
+    }
+    if hit {
+      for r in g.rules {
+        out.push(r)
+      }
+      match g.crawl_delay_ms {
+        Some(d) =>
+          match delay {
+            Some(cur) => if d > cur { delay = Some(d) }
+            None => delay = Some(d)
           }
-        }
+        None => ()
       }
-      None
     }
   }
+  { rules: out, crawl_delay_ms: delay, }
+}
+
+///|
+/// `/robots.txt` 本身隐式允许（RFC 9309 §2.2.2）。
+fn is_robots_txt_path(path : String) -> Bool {
+  path == "/robots.txt" || starts_with(path, "/robots.txt?")
+}
+
+///|
+/// 判定 agent 是否允许抓取 path（含 "?query"，不含 host 与 fragment）。
+/// 无匹配组、组内无规则或路径为 /robots.txt 时允许。
+pub fn RobotsRules::allowed(
+  self : RobotsRules,
+  agent : String,
+  path : String,
+) -> Bool {
+  if is_robots_txt_path(path) {
+    return true
+  }
+  let eff = effective_rules(self, agent)
+  if eff.rules.length() == 0 {
+    return true
+  }
+  let mut best_len : Int32 = -1
+  let mut verdict : Bool = true
+  for entry in eff.rules {
+    let (allow, pat) = entry
+    if glob_match(pat, path) {
+      let plen = chars_of(pat).length()
+      if plen > best_len || (plen == best_len && allow) {
+        best_len = plen
+        verdict = allow
+      }
+    }
+  }
+  if best_len < 0 {
+    return true
+  }
+  verdict
+}
+
+///|
+/// 生效规则集里声明的 Crawl-delay（毫秒），多组合并时取最大值。
+/// 无组/未声明返回 None。
+pub fn RobotsRules::crawl_delay_ms(
+  self : RobotsRules,
+  agent : String,
+) -> Int32? {
+  effective_rules(self, agent).crawl_delay_ms
 }
 
 ///|
@@ -379,51 +499,6 @@ fn starts_with(s : String, prefix : String) -> Bool {
     i = i + 1
   }
   true
-}
-
-///|
-/// 判定 agent 是否允许抓取 path（含 "?query"，不含 host 与 fragment）。
-/// 无任何匹配组时允许。
-pub fn RobotsRules::allowed(
-  self : RobotsRules,
-  agent : String,
-  path : String,
-) -> Bool {
-  let g = match select_group(self, agent) {
-    Some(g) => g
-    None => return true
-  }
-  if g.rules.length() == 0 {
-    return true
-  }
-  let mut best_len : Int32 = -1
-  let mut verdict : Bool = true
-  for entry in g.rules {
-    let (allow, pat) = entry
-    if glob_match(pat, path) {
-      let plen = chars_of(pat).length()
-      if plen > best_len || (plen == best_len && allow) {
-        best_len = plen
-        verdict = allow
-      }
-    }
-  }
-  if best_len < 0 {
-    return true
-  }
-  verdict
-}
-
-///|
-/// 适用组的 Crawl-delay（毫秒）。无组/未声明返回 None。
-pub fn RobotsRules::crawl_delay_ms(
-  self : RobotsRules,
-  agent : String,
-) -> Int32? {
-  match select_group(self, agent) {
-    Some(g) => g.crawl_delay_ms
-    None => None
-  }
 }
 
 ///|

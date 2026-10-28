@@ -60,6 +60,40 @@ test "frontier: 大量 URL 消费游标无退化" {
 }
 
 ///|
+test "frontier: pop_batch 每个 host 只取一个" {
+  let f = @mooncrawl.Frontier::new(0)
+  let _ = f.push("https://a.com/1")
+  let _ = f.push("https://a.com/2")
+  let _ = f.push("https://b.com/1")
+  let batch = f.pop_batch(4)
+  assert_eq(batch.length(), 2)
+  assert_eq(batch[0], "https://a.com/1")
+  assert_eq(batch[1], "https://b.com/1")
+  // 同 host 的第二个 URL 被移回队尾，留给下一轮
+  assert_eq(f.length(), 1)
+  let next = f.pop_batch(4)
+  assert_eq(next.length(), 1)
+  assert_eq(next[0], "https://a.com/2")
+}
+
+///|
+test "frontier: pop_batch 全同 host 时能收敛" {
+  let f = @mooncrawl.Frontier::new(0)
+  let mut i : Int32 = 0
+  while i < 5 {
+    let _ = f.push("https://a.com/p/" + i.to_string())
+    i = i + 1
+  }
+  let mut rounds : Int32 = 0
+  while f.length() > 0 && rounds < 20 {
+    let batch = f.pop_batch(4)
+    assert_true(batch.length() <= 1)
+    rounds = rounds + 1
+  }
+  assert_eq(rounds, 5)
+}
+
+///|
 test "frontier: 无法解析的 URL 归入同一兜底桶" {
   let f = @mooncrawl.Frontier::new(1000)
   f.record_visit("not-a-url", 1_000)

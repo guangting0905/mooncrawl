@@ -10,9 +10,17 @@ pub fn csv_header() -> String
 
 pub fn csv_page(PageResult) -> String
 
+pub fn csv_record(Array[(String, String)]) -> String
+
+pub fn csv_record_header(Array[(String, String)]) -> String
+
 pub fn csv_row(Array[String]) -> String
 
+pub fn extract_fields(String, Array[FieldSpec]) -> Array[(String, String)]
+
 pub fn extract_links(String) -> Array[String]
+
+pub fn extract_records(String, String, Array[FieldSpec]) -> Array[Array[(String, String)]]
 
 pub fn extract_text(String) -> String
 
@@ -22,9 +30,13 @@ pub async fn http_fetch(String, String) -> FetchOutcome
 
 pub fn json_escape(String) -> String
 
+pub fn json_record(Array[(String, String)]) -> String
+
 pub fn jsonl_page(PageResult) -> String
 
 pub fn normalize_url(Url) -> String
+
+pub fn normalize_url_sorted_query(Url) -> String
 
 pub fn parse_robots(String) -> RobotsRules
 
@@ -32,9 +44,21 @@ pub fn parse_url(String) -> Url?
 
 pub fn resolve_url(Url, String) -> Url?
 
+pub fn select_attrs(String, String, String) -> Array[String]
+
+pub fn select_count(String, String) -> Int32
+
+pub fn select_texts(String, String) -> Array[String]
+
 // Errors
 
 // Types and methods
+pub(all) struct AttrPredicate {
+  name : String
+  op : String
+  value : String
+}
+
 pub struct Bloom {
   // private fields
 }
@@ -42,11 +66,19 @@ pub fn Bloom::add(Self, String) -> Unit
 pub fn Bloom::maybe_contains(Self, String) -> Bool
 pub fn Bloom::new(Int32) -> Self
 
+pub(all) struct CompoundSelector {
+  simples : Array[SimpleSelector]
+  combinator : String
+}
+
 pub(all) struct CrawlOptions {
   max_pages : Int32
   max_depth : Int32
   delay_ms : Int32
+  max_concurrency : Int32
   respect_robots : Bool
+  robots_unreachable : RobotsUnreachable
+  keep_body : Bool
   user_agent : String
 }
 pub fn CrawlOptions::default() -> Self
@@ -56,6 +88,7 @@ pub struct CrawlStats {
   mut pages_ok : Int32
   mut pages_failed : Int32
   mut pages_skipped_robots : Int32
+  mut pages_skipped_unreachable : Int32
   mut links_discovered : Int32
   mut robots_unreachable : Int32
 }
@@ -66,6 +99,14 @@ pub(all) struct FetchOutcome {
   error : String?
 }
 
+pub(all) struct FieldSpec {
+  name : String
+  selector : String
+  attr : String?
+}
+pub fn FieldSpec::attr(String, String, String) -> Self
+pub fn FieldSpec::text(String, String) -> Self
+
 pub struct Frontier {
   // private fields
 }
@@ -75,6 +116,7 @@ pub fn Frontier::mark_seen(Self, String) -> Unit
 pub fn Frontier::new(Int32) -> Self
 pub fn Frontier::next_allowed_ms(Self, String, Int32) -> Int32
 pub fn Frontier::pop(Self) -> String?
+pub fn Frontier::pop_batch(Self, Int32) -> Array[String]
 pub fn Frontier::push(Self, String) -> Bool
 pub fn Frontier::record_visit(Self, String, Int32) -> Unit
 
@@ -84,6 +126,7 @@ pub(all) struct PageResult {
   depth : Int32
   links_found : Int32
   title : String?
+  body : String?
   error : String?
 }
 
@@ -94,6 +137,26 @@ pub fn RobotsRules::allowed(Self, String, String) -> Bool
 pub fn RobotsRules::allowed_url(Self, String, Url) -> Bool
 pub fn RobotsRules::crawl_delay_ms(Self, String) -> Int32?
 pub fn RobotsRules::sitemaps(Self) -> Array[String]
+
+pub(all) enum RobotsUnreachable {
+  Disallow
+  Allow
+}
+
+pub(all) struct Selector {
+  chains : Array[Array[CompoundSelector]]
+}
+pub fn Selector::empty() -> Self
+pub fn Selector::is_empty(Self) -> Bool
+pub fn Selector::parse(String) -> Self
+
+pub(all) enum SimpleSelector {
+  TagSel(String)
+  ClassSel(String)
+  IdSel(String)
+  AttrSel(AttrPredicate)
+  FirstChildSel
+}
 
 pub struct Url {
   scheme : String

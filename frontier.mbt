@@ -62,6 +62,34 @@ pub fn Frontier::pop(self : Frontier) -> String? {
 }
 
 ///|
+/// 批量出队，**每个 host 最多一个**。
+///
+/// 供并发调度使用：同 host 的请求必须串行（礼貌限速按站记账），
+/// 不同 host 可以并行。本轮未取到的 URL 会被移到队尾，留待下一轮。
+/// 扫描上界取调用时的队列长度快照，因此不会因为回填而无限循环。
+pub fn Frontier::pop_batch(self : Frontier, limit : Int32) -> Array[String] {
+  let out : Array[String] = []
+  if limit <= 0 {
+    return out
+  }
+  let picked : Map[String, Bool] = Map([], capacity=16)
+  let stop : Int32 = self.queue.length()
+  while self.head < stop && out.length() < limit {
+    let url = self.queue[self.head]
+    self.head = self.head + 1
+    let host = host_of(url)
+    match picked.get(host) {
+      Some(_) => self.queue.push(url) // 同 host 本轮不取，排到队尾
+      None => {
+        let _ = picked.set(host, true)
+        out.push(url)
+      }
+    }
+  }
+  out
+}
+
+///|
 /// 待抓取数量。
 pub fn Frontier::length(self : Frontier) -> Int32 {
   self.queue.length() - self.head

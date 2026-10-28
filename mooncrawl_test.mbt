@@ -28,9 +28,31 @@ test "parse_url: 非法输入返回 None" {
 }
 
 ///|
-test "normalize_url: 大小写、默认端口、点段与参数排序" {
+test "normalize_url: 小写、默认端口、点段折叠，保留参数原始顺序" {
   let u = @mooncrawl.parse_url("HTTP://Example.COM:80/a/./b?b=2&a=1#frag").unwrap()
-  inspect(@mooncrawl.normalize_url(u), content="http://example.com/a/b?a=1&b=2")
+  inspect(@mooncrawl.normalize_url(u), content="http://example.com/a/b?b=2&a=1")
+}
+
+///|
+test "normalize_url_sorted_query: 显式选择后才折叠参数顺序" {
+  let u = @mooncrawl.parse_url("HTTP://Example.COM:80/a/./b?b=2&a=1#frag").unwrap()
+  inspect(
+    @mooncrawl.normalize_url_sorted_query(u),
+    content="http://example.com/a/b?a=1&b=2",
+  )
+}
+
+///|
+test "normalize_url: 参数顺序不同不被当作同一资源" {
+  // RFC 3986 §6.2.3：参数顺序属「需 scheme 定义」的等价，不能默认折叠。
+  let a = @mooncrawl.parse_url("https://example.com/a?x=2&y=1").unwrap()
+  let b = @mooncrawl.parse_url("https://example.com/a?y=1&x=2").unwrap()
+  assert_true(@mooncrawl.normalize_url(a) != @mooncrawl.normalize_url(b))
+  // 显式启用排序策略后才相等
+  assert_eq(
+    @mooncrawl.normalize_url_sorted_query(a),
+    @mooncrawl.normalize_url_sorted_query(b),
+  )
 }
 
 ///|
@@ -56,7 +78,7 @@ test "normalize_url: 保留结尾斜杠语义" {
 ///|
 test "normalize_url: 等价书写形式折叠为同一字符串" {
   let a = @mooncrawl.parse_url("HTTPS://EXAMPLE.com:443/a?x=2&y=1").unwrap()
-  let b = @mooncrawl.parse_url("https://example.com/a?y=1&x=2").unwrap()
+  let b = @mooncrawl.parse_url("https://example.com/a?x=2&y=1").unwrap()
   assert_eq(@mooncrawl.normalize_url(a), @mooncrawl.normalize_url(b))
 }
 

@@ -92,6 +92,51 @@ pub fn json_escape(s : String) -> String {
 }
 
 ///|
+/// 通用记录行：字段对按传入顺序输出为一行 JSON。
+///
+/// 与 `jsonl_page` 的区别是不绑定任何结构体——配合 `extract_fields` /
+/// `extract_records` 使用，字段名来自调用方的 `FieldSpec`。
+pub fn json_record(fields : Array[(String, String)]) -> String {
+  let buf = StringBuilder()
+  buf.write_char('{')
+  let mut first : Bool = true
+  for kv in fields {
+    let (k, v) = kv
+    if !first {
+      buf.write_char(',')
+    }
+    first = false
+    buf.write_string(json_escape(k))
+    buf.write_char(':')
+    buf.write_string(json_escape(v))
+  }
+  buf.write_char('}')
+  buf.to_string()
+}
+
+///|
+/// 通用记录行：字段对按传入顺序输出为一行 CSV（字段名作为表头来源）。
+pub fn csv_record(fields : Array[(String, String)]) -> String {
+  let values : Array[String] = []
+  for kv in fields {
+    let (_, v) = kv
+    values.push(v)
+  }
+  csv_row(values)
+}
+
+///|
+/// 通用表头行。
+pub fn csv_record_header(fields : Array[(String, String)]) -> String {
+  let names : Array[String] = []
+  for kv in fields {
+    let (k, _) = kv
+    names.push(k)
+  }
+  csv_row(names)
+}
+
+///|
 /// JSONL 行：抓取结果一行一条记录。
 pub fn jsonl_page(p : PageResult) -> String {
   let buf = StringBuilder()

@@ -119,6 +119,38 @@ test "robots: allowed_url 用 path+query 匹配" {
 }
 
 ///|
+test "robots: 同一 UA 分散在多个组时规则合并（RFC 9309 §2.2.1）" {
+  let r = @mooncrawl.parse_robots(
+    "User-agent: mooncrawl\nDisallow: /a\n\nUser-agent: mooncrawl\nDisallow: /b\n",
+  )
+  assert_true(!r.allowed(UA, "/a"))
+  assert_true(!r.allowed(UA, "/b"))
+  assert_true(r.allowed(UA, "/c"))
+}
+
+///|
+test "robots: 合并组时 Crawl-delay 取最大值" {
+  let r = @mooncrawl.parse_robots(
+    "User-agent: mooncrawl\nCrawl-delay: 1\nDisallow: /a\n\nUser-agent: mooncrawl\nCrawl-delay: 3\nDisallow: /b\n",
+  )
+  assert_eq(r.crawl_delay_ms(UA), Some(3000))
+}
+
+///|
+test "robots: /robots.txt 隐式允许（RFC 9309 §2.2.2）" {
+  let r = @mooncrawl.parse_robots("User-agent: *\nDisallow: /\n")
+  assert_true(r.allowed(UA, "/robots.txt"))
+  assert_true(!r.allowed(UA, "/"))
+}
+
+///|
+test "robots: UTF-8 BOM 不影响首条指令" {
+  let r = @mooncrawl.parse_robots("\u{FEFF}User-agent: *\nDisallow: /secret\n")
+  assert_true(!r.allowed(UA, "/secret/x"))
+  assert_true(r.allowed(UA, "/open"))
+}
+
+///|
 test "robots: 真实风格文件端到端" {
   let r = @mooncrawl.parse_robots(
     "User-agent: *\nDisallow: /admin\nCrawl-delay: 1\n\nUser-agent: mooncrawl\nDisallow: /admin/secret\nAllow: /admin/\n\nSitemap: https://example.com/sitemap.xml",

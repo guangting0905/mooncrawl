@@ -49,11 +49,11 @@ async test "crawl: 假站点端到端——深度与统计" {
   let stats = @mooncrawl.crawl(
     "https://fake.test/",
     {
+      ..@mooncrawl.CrawlOptions::default(),
       max_pages: 10,
       max_depth: 1,
       delay_ms: 0,
       respect_robots: true,
-      user_agent: "MoonCrawl/0.1",
     },
     fetch,
     fn(p) { let _ = pages.push(p) },
@@ -89,11 +89,11 @@ async test "crawl: max_pages 截断" {
   let stats = @mooncrawl.crawl(
     "https://fake.test/",
     {
+      ..@mooncrawl.CrawlOptions::default(),
       max_pages: 2,
       max_depth: 2,
       delay_ms: 0,
       respect_robots: true,
-      user_agent: "MoonCrawl/0.1",
     },
     fetch,
     fn(p) { let _ = pages.push(p) },
@@ -117,11 +117,11 @@ async test "crawl: robots 禁止的页面被跳过且不发请求" {
   let stats = @mooncrawl.crawl(
     "https://fake.test/",
     {
+      ..@mooncrawl.CrawlOptions::default(),
       max_pages: 10,
       max_depth: 1,
       delay_ms: 0,
       respect_robots: true,
-      user_agent: "MoonCrawl/0.1",
     },
     fetch,
     fn(p) { let _ = pages.push(p) },
@@ -144,8 +144,35 @@ async test "crawl: robots 禁止的页面被跳过且不发请求" {
 }
 
 ///|
-async test "crawl: robots 不可达时按允许抓取并计数" {
-  // robots.txt 缺失（fetch 返回错误）
+async test "crawl: robots 不可达时默认全禁（RFC 9309 §2.3.1.4）" {
+  // robots.txt 缺失（fetch 返回错误）→ unreachable → 视为完全禁止
+  let fetch = fake_site([
+    ("https://fake.test/", ok("<html><body><a href=\"/a\">a</a></body></html>")),
+    ("https://fake.test/a", ok("<html><body>ok</body></html>")),
+  ])
+  let pages : Array[@mooncrawl.PageResult] = []
+  let stats = @mooncrawl.crawl(
+    "https://fake.test/",
+    {
+      ..@mooncrawl.CrawlOptions::default(),
+      max_pages: 10,
+      max_depth: 1,
+      delay_ms: 0,
+      respect_robots: true,
+    },
+    fetch,
+    fn(p) { let _ = pages.push(p) },
+  )
+  assert_eq(stats.robots_unreachable, 1)
+  assert_eq(stats.pages_ok, 0)
+  assert_eq(stats.pages_fetched, 0)
+  assert_eq(stats.pages_skipped_unreachable, 1)
+  assert_eq(pages.length(), 1)
+  assert_true(pages[0].error is Some(_))
+}
+
+///|
+async test "crawl: 显式 Allow 策略下 robots 不可达仍抓取" {
   let fetch = fake_site([
     ("https://fake.test/", ok("<html><body><a href=\"/a\">a</a></body></html>")),
     ("https://fake.test/a", ok("<html><body>ok</body></html>")),
@@ -153,17 +180,66 @@ async test "crawl: robots 不可达时按允许抓取并计数" {
   let stats = @mooncrawl.crawl(
     "https://fake.test/",
     {
+      ..@mooncrawl.CrawlOptions::default(),
       max_pages: 10,
       max_depth: 1,
       delay_ms: 0,
       respect_robots: true,
-      user_agent: "MoonCrawl/0.1",
+      robots_unreachable: @mooncrawl.RobotsUnreachable::Allow,
     },
     fetch,
     fn(_p) { () },
   )
   assert_eq(stats.robots_unreachable, 1)
   assert_eq(stats.pages_ok, 2)
+}
+
+///|
+async test "crawl: robots.txt 返回 4xx 视为无规则并放行" {
+  let fetch = fake_site([
+    ("https://fake.test/robots.txt", { status: 404, body: "", error: None, }),
+    ("https://fake.test/", ok("<html><body>ok</body></html>")),
+  ])
+  let stats = @mooncrawl.crawl(
+    "https://fake.test/",
+    {
+      ..@mooncrawl.CrawlOptions::default(),
+      max_pages: 10,
+      max_depth: 0,
+      delay_ms: 0,
+      respect_robots: true,
+    },
+    fetch,
+    fn(_p) { () },
+  )
+  assert_eq(stats.robots_unreachable, 0)
+  assert_eq(stats.pages_ok, 1)
+}
+
+///|
+async test "crawl: robots.txt 返回 5xx 视为不可达并全禁" {
+  let fetch = fake_site([
+    (
+      "https://fake.test/robots.txt",
+      { status: 503, body: "busy", error: None, },
+    ),
+    ("https://fake.test/", ok("<html><body>ok</body></html>")),
+  ])
+  let stats = @mooncrawl.crawl(
+    "https://fake.test/",
+    {
+      ..@mooncrawl.CrawlOptions::default(),
+      max_pages: 10,
+      max_depth: 0,
+      delay_ms: 0,
+      respect_robots: true,
+    },
+    fetch,
+    fn(_p) { () },
+  )
+  assert_eq(stats.robots_unreachable, 1)
+  assert_eq(stats.pages_ok, 0)
+  assert_eq(stats.pages_skipped_unreachable, 1)
 }
 
 ///|
@@ -175,11 +251,11 @@ async test "crawl: 关闭 robots 检查则直接抓取" {
   let stats = @mooncrawl.crawl(
     "https://fake.test/",
     {
+      ..@mooncrawl.CrawlOptions::default(),
       max_pages: 10,
       max_depth: 0,
       delay_ms: 0,
       respect_robots: false,
-      user_agent: "MoonCrawl/0.1",
     },
     fetch,
     fn(_p) { () },
@@ -205,11 +281,11 @@ async test "crawl: 跨页面同一链接只抓一次" {
   let stats = @mooncrawl.crawl(
     "https://fake.test/",
     {
+      ..@mooncrawl.CrawlOptions::default(),
       max_pages: 10,
       max_depth: 2,
       delay_ms: 0,
       respect_robots: true,
-      user_agent: "MoonCrawl/0.1",
     },
     fetch,
     fn(_p) { () },
@@ -233,11 +309,11 @@ async test "crawl: 传输失败计入 pages_failed 并产生 error 结果" {
   let stats = @mooncrawl.crawl(
     "https://fake.test/",
     {
+      ..@mooncrawl.CrawlOptions::default(),
       max_pages: 10,
       max_depth: 1,
       delay_ms: 0,
       respect_robots: true,
-      user_agent: "MoonCrawl/0.1",
     },
     fetch,
     fn(p) { let _ = pages.push(p) },
@@ -253,15 +329,69 @@ async test "crawl: 非法种子返回全零统计" {
   let stats = @mooncrawl.crawl(
     "not-a-url",
     {
+      ..@mooncrawl.CrawlOptions::default(),
       max_pages: 10,
       max_depth: 1,
       delay_ms: 0,
       respect_robots: true,
-      user_agent: "MoonCrawl/0.1",
     },
     fetch,
     fn(_p) { () },
   )
   assert_eq(stats.pages_fetched, 0)
   assert_eq(stats.links_discovered, 0)
+}
+
+///|
+/// 多 host 假站点：种子在 a.test，链接到 b.test 与 c.test。
+/// 抓取时记录同时在途的请求数峰值，用来验证并行度。
+async fn multi_host_peak(concurrency : Int32) -> Int32 {
+  let active = [0]
+  let peak = [0]
+  let fetch = async fn(url : String, _ua : String) -> @mooncrawl.FetchOutcome {
+    active[0] = active[0] + 1
+    if active[0] > peak[0] {
+      peak[0] = active[0]
+    }
+    @async.sleep(10)
+    active[0] = active[0] - 1
+    if url == "https://a.test/" {
+      return {
+        status: 200,
+        body: "<html><body><a href=\"https://b.test/\">b</a>" +
+        "<a href=\"https://c.test/\">c</a></body></html>",
+        error: None,
+      }
+    }
+    if url == "https://b.test/robots.txt" || url == "https://c.test/robots.txt" {
+      return { status: 200, body: OPEN_ROBOTS, error: None, }
+    }
+    { status: 200, body: "<html><body>leaf</body></html>", error: None, }
+  }
+  let stats = @mooncrawl.crawl(
+    "https://a.test/",
+    {
+      ..@mooncrawl.CrawlOptions::default(),
+      max_pages: 10,
+      max_depth: 1,
+      delay_ms: 0,
+      max_concurrency: concurrency,
+    },
+    fetch,
+    fn(_p) { () },
+  )
+  assert_eq(stats.pages_ok, 3)
+  peak[0]
+}
+
+///|
+async test "crawl: 跨 host 并行（max_concurrency>1）" {
+  let peak = multi_host_peak(3)
+  assert_true(peak >= 2)
+}
+
+///|
+async test "crawl: max_concurrency=1 时完全串行" {
+  let peak = multi_host_peak(1)
+  assert_eq(peak, 1)
 }

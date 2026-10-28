@@ -1,8 +1,14 @@
 // URL 解析、规范化与相对地址展开。
 //
-// 抓取器在把 URL 放入队列前必须先规范化：同一个资源的不同书写形式
-// （大小写、默认端口、点段、参数顺序、fragment）折叠为同一字符串，
-// 去重和 polite 策略才不会失效。
+// 规范化的目标是折叠「服务端必然视为同一资源」的书写差异：scheme/host
+// 大小写、协议默认端口、点段、fragment。这些在 RFC 3986 §6.2.2 中属于
+// 语法层面的等价，折叠不会改变请求含义。
+//
+// 查询参数顺序刻意不在默认折叠范围内。RFC 3986 §6.2.3 把 `a=1&b=2` 与
+// `b=2&a=1` 归为「可能等价、需 scheme 定义」：服务端完全可以把参数顺序
+// 当作语义（有序签名、重复键取值、后端按位置读参都会因此改变结果）。
+// 因此默认保留原始顺序，宁可多抓一次也不误判为同一资源；确实需要按
+// 无序多重集去重的调用方，显式使用 `normalize_url_sorted_query`。
 //
 // 内部扫描统一基于 Array[Char]，规避 String 索引返回 UTF-16 码元的
 // 语义差异；URL 实际场景以 ASCII 为主，代价可忽略。
@@ -320,7 +326,11 @@ fn pair_cmp(x : (String, Bool, String), y : (String, Bool, String)) -> Int32 {
 
 ///|
 /// query 参数按 key（再按 value）字典序排序后重组。
-fn normalize_query(q : String) -> String {
+///
+/// 仅用于 `normalize_url_sorted_query`：调用方必须先确认目标站点把
+/// query 视为无序多重集，否则会改变请求含义（有序签名、重复键取值、
+/// 后端按位置读参都可能因此指向不同资源）。
+fn sort_query_pairs(q : String) -> String {
   let cs = chars_of(q)
   let n : Int32 = cs.length()
   let pairs : Array[(String, Bool, String)] = []
@@ -329,11 +339,19 @@ fn normalize_query(q : String) -> String {
   while i <= n {
     if i == n || cs[i] == '&' {
       if i > start {
-        let item = slice(cs, start, i)
-        match find_from(cs, chars_of("="), start) {
-          Some(idx) if idx < i =>
-            pairs.push((slice(cs, start, idx), true, slice(cs, idx + 1, i)))
-          _ => pairs.push((item, false, ""))
+        let mut eq : Int32 = -1
+        let mut j : Int32 = start
+        while j < i {
+          if cs[j] == '=' {
+            eq = j
+            break
+          }
+          j = j + 1
+        }
+        if eq >= 0 {
+          pairs.push((slice(cs, start, eq), true, slice(cs, eq + 1, i)))
+        } else {
+          pairs.push((slice(cs, start, i), false, ""))
         }
       }
       i = i + 1
@@ -373,9 +391,8 @@ fn normalize_query(q : String) -> String {
 }
 
 ///|
-/// 规范化为标准字符串形式：小写 scheme/host、省略默认端口、
-/// 点段折叠、参数排序、fragment 去除（解析时已去）。
-pub fn normalize_url(u : Url) -> String {
+/// 规范化渲染。`sort_query` 决定是否折叠查询参数顺序——默认关闭。
+fn render_url(u : Url, sort_query : Bool) -> String {
   let buf = StringBuilder()
   buf.write_string(u.scheme)
   buf.write_string("://")
@@ -393,11 +410,35 @@ pub fn normalize_url(u : Url) -> String {
     Some(q) =>
       if q != "" {
         buf.write_string("?")
-        buf.write_string(normalize_query(q))
+        if sort_query {
+          buf.write_string(sort_query_pairs(q))
+        } else {
+          buf.write_string(q)
+        }
       }
     None => ()
   }
   buf.to_string()
+}
+
+///|
+/// 保守规范化：小写 scheme/host、省略协议默认端口、折叠点段、
+/// 丢弃 fragment，**保留查询参数的原始顺序**。
+///
+/// 折叠的每一项都是 RFC 3986 §6.2.2 意义上的语法等价；参数顺序涉及
+/// §6.2.3 的「需 scheme 定义」情形，默认不动。
+pub fn normalize_url(u : Url) -> String {
+  render_url(u, false)
+}
+
+///|
+/// 激进规范化：在 `normalize_url` 基础上再把查询参数按 key/value 排序。
+///
+/// 仅当调用方确认目标站点把 query 当作**无序多重集**时使用。对签名 URL、
+/// 依赖参数位置的接口、以重复键表达多值的接口，这样做会把不同资源折叠成
+/// 同一个 URL，造成漏抓。
+pub fn normalize_url_sorted_query(u : Url) -> String {
+  render_url(u, true)
 }
 
 ///|

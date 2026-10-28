@@ -39,6 +39,7 @@ test "jsonl: PageResult 序列化字段完整" {
     depth: 1,
     links_found: 3,
     title: Some("T\"X\""),
+    body: None,
     error: None,
   })
   assert_eq(
@@ -50,6 +51,7 @@ test "jsonl: PageResult 序列化字段完整" {
     depth: 0,
     links_found: 0,
     title: None,
+    body: None,
     error: Some("boom"),
   })
   assert_eq(
@@ -69,6 +71,7 @@ test "csv: PageResult 行与表头对应" {
     depth: 2,
     links_found: 0,
     title: None,
+    body: None,
     error: Some("not found"),
   })
   assert_eq(row, "u,404,2,0,,not found\r\n")
