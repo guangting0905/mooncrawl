@@ -11,7 +11,7 @@ MoonCrawl 项目申报书
 
 ## 项目简介
 
-MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 → 提数据 → 出结果」串成一条可复用的采集流水线，为数据采集、语料构建、站点监控和内容分析提供工程化的基础层。项目面向需要在 MoonBit 中做批量取数的库作者、工具开发者和应用开发者，提供 URL 解析与规范化、布隆过滤器去重、robots.txt 协议处理、按站点礼貌限速、跨 origin 异步调度、HTML 提取与 CSS 选择器字段提取，以及 JSONL / CSV 结构化导出。MoonBit 生态已有 HTTP 客户端与 HTML 解析器等积木，但缺少把它们串成采集流水线的框架层——MoonCrawl 补的正是这一层，不重复实现 socket、TLS 或 HTML 词法与树构建。申报前已按章程完成查重，mooncakes.io 全量 3,265 个模块中爬虫框架方向 0 命中（详见 docs/查重报告.md）。
+MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 → 提数据 → 出结果」串成一条可复用的采集流水线，为数据采集、语料构建、站点监控和内容分析提供工程化的基础层。项目面向需要在 MoonBit 中做批量取数的库作者、工具开发者和应用开发者，提供 URL 解析与规范化、布隆过滤器去重、robots.txt 协议处理、按站点礼貌限速、跨 origin 异步调度、HTML 提取与 CSS 选择器字段提取，以及 JSONL / CSV 结构化导出。MoonBit 生态已有 HTTP 客户端与 HTML 解析器等积木，但缺少把它们串成采集流水线的框架层——MoonCrawl 补的正是这一层，不重复实现 socket、TLS 或 HTML 词法与树构建。申报前已按章程完成查重：截至 2026-10-24，mooncakes.io 全量 3,265 个模块中爬虫框架方向 0 命中（详见 docs/查重报告.md）。
 
 ## 核心功能范围
 
@@ -62,5 +62,7 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 - **顺带修复 5 个实现缺陷**（均有测试覆盖）：① 礼貌调度把 64 位毫秒截断成 32 位，等待时长溢出导致 `sleep` 永不返回、抓取静默卡死（也是引擎测试在 js 后端无法完成的根因）；② robots 不可达时放行，违反 §2.3.1.4；③ 多个组匹配同一 UA 时未合并，违反 §2.2.1；④ `/robots.txt` 未隐式允许，违反 §2.2.2；⑤ robots.txt 未剥离 UTF-8 BOM，带 BOM 时整组规则失效。
 
 - **开源合规**：Apache-2.0，LICENSE 全文入库；新增 NOTICE，列明第三方组件（moonbitlang/async、moonbit-community/html，均 Apache-2.0，Copyright 2025 International Digital Economy Academy）与所引用的规范（RFC 3986 / 9309 / 4180）；`.moonignore` 控制打包范围，参赛材料不随包分发。
+
+- **已知限制**（完整清单见 README「已知限制」）：查询参数顺序默认不折叠，同一资源可能被抓两次；robots 的百分号解码、重定向链、缓存时效、解析体积上限未覆盖；不做 JS 渲染与 XPath；单机内存队列，不支持分布式调度；同 origin 串行，单站点吞吐受 `delay_ms` 限制。
 
 - **验证**：`moon test --target js` 80 个用例全部通过；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.1，`moon add guangting0905/mooncrawl@0.1.1` 可安装）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。
