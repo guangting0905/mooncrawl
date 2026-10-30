@@ -1,6 +1,6 @@
 name = "guangting0905/mooncrawl"
 
-version = "0.1.0"
+version = "0.1.1"
 
 readme = "README.md"
 
@@ -8,7 +8,7 @@ repository = "https://github.com/guangting0905/mooncrawl"
 
 license = "Apache-2.0"
 
-keywords = [ "crawler", "spider", "web-harvesting", "url", "data-collection" ]
+keywords = [ "crawler", "spider", "scraping", "robots-txt", "url" ]
 
 preferred_target = "native"
 

@@ -19,7 +19,7 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - 提供保守的等价判定策略：默认只折叠 RFC 3986 §6.2.2 意义上的语法等价，**保留查询参数原始顺序**（参数顺序在部分服务端是语义，不默认视为同一资源）；需要按无序多重集去重的调用方，显式使用 `normalize_url_sorted_query`；
 
-- 提供布隆过滤器去重模块（每元素 16 bit、7 哈希、误报率约 0.06%），支撑十万级 URL 的内存可控去重；
+- 提供布隆过滤器去重模块（每元素 16 bit、7 哈希、理论误报率约 0.07%，位用 UInt64 手工打包，十万 URL 约 200 KiB），支撑十万级 URL 的内存可控去重；
 
 - 提供 robots.txt 解析与匹配（RFC 9309）：User-agent 分组大小写不敏感前缀匹配、多个组匹配同一 UA 时合并、Allow/Disallow 最长模式优先与等长 Allow 优先、`*` 与 `$` 通配、`/robots.txt` 隐式允许、Crawl-delay 毫秒化解析与 Sitemap 收集；
 
@@ -39,7 +39,7 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - 提供命令行入口 `mooncrawl`（moonbitlang/core/argparse）两种模式：页面模式输出每页元数据，采集模式经 `--container` 与 `--fields` 按选择器逐条提取记录，并把字段值中的相对链接自动展开为绝对 URL；
 
-- 提供 75 个 MoonBit 测试并持续保持核心回归测试通过，其中引擎与调度用例全部离线运行（注入假 fetcher，不依赖网络与时钟）；GitHub Actions CI 在 js 与 native 双后端执行全量测试与 moon fmt 格式门禁；
+- 提供 80 个 MoonBit 测试并持续保持核心回归测试通过，其中引擎与调度用例全部离线运行（注入假 fetcher，不依赖网络与时钟）；GitHub Actions CI 在 js 与 native 双后端执行全量测试与 moon fmt 格式门禁（wasm-gc 不支持：引擎依赖的 moonbitlang/async/http 无 wasm 实现）；
 
 - 提供 README 示例，覆盖库调用（规范化/展开/去重/robots/选择器/引擎）与 CLI 双模式的真实输出，以及架构图、模块-测试对照表与已知限制清单；并提供 docs/rfc9309-覆盖声明.md 作为 robots 处理的外部一致性证据。
 
@@ -61,4 +61,6 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - **顺带修复 5 个实现缺陷**（均有测试覆盖）：① 礼貌调度把 64 位毫秒截断成 32 位，等待时长溢出导致 `sleep` 永不返回、抓取静默卡死（也是引擎测试在 js 后端无法完成的根因）；② robots 不可达时放行，违反 §2.3.1.4；③ 多个组匹配同一 UA 时未合并，违反 §2.2.1；④ `/robots.txt` 未隐式允许，违反 §2.2.2；⑤ robots.txt 未剥离 UTF-8 BOM，带 BOM 时整组规则失效。
 
-- **验证**：`moon test --target js` 75 个用例全部通过；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.0，`moon add guangting0905/mooncrawl@0.1.0` 可安装）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。
+- **开源合规**：Apache-2.0，LICENSE 全文入库；新增 NOTICE，列明第三方组件（moonbitlang/async、moonbit-community/html，均 Apache-2.0，Copyright 2025 International Digital Economy Academy）与所引用的规范（RFC 3986 / 9309 / 4180）；`.moonignore` 控制打包范围，参赛材料不随包分发。
+
+- **验证**：`moon test --target js` 80 个用例全部通过；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.1，`moon add guangting0905/mooncrawl@0.1.1` 可安装）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。

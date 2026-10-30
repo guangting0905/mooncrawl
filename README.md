@@ -4,11 +4,11 @@
 
 **MoonBit 的网页爬虫框架** —— 2026 MoonBit 黑客松 10 月赛参赛项目。
 
-已发布到 mooncakes.io：`guangting0905/mooncrawl@0.1.0`
+已发布到 mooncakes.io：`guangting0905/mooncrawl@0.1.1`
 （[文档](https://mooncakes.io/docs/guangting0905/mooncrawl)）
 
 ```bash
-moon add guangting0905/mooncrawl@0.1.0
+moon add guangting0905/mooncrawl@0.1.1
 ```
 
 MoonCrawl 把「抓网页 → 提数据 → 出结果」串成一条可复用流水线：URL 规范化、
@@ -31,8 +31,29 @@ MoonBit 生态里 HTTP 客户端、HTML 解析器、CSV 解析器这些**积木�
 - **提取规则放哪** —— 写死在代码里换站点就得改代码；做成数据换选择器就行。
 
 申报前已按章程完成查重（详见 [docs/查重报告.md](docs/查重报告.md)）：
-mooncakes.io 全量 3,265 个模块中 `crawl/spider/scrape` 相关 **0 命中**；
+mooncakes.io 截至 2026-10-24 的全量 3,265 个模块中 `crawl/spider/scrape`
+相关 **0 命中**（不含本项目自身）；
 awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目无同类选题。
+
+## 快速开始
+
+作为依赖：
+
+```bash
+moon add guangting0905/mooncrawl@0.1.1
+```
+
+从源码构建与测试：
+
+```bash
+moon test --target js     # 80 个离线测试
+moon run cmd/main --target js -- https://books.toscrape.com/ --max-pages 12 --depth 1
+```
+
+后端选择：**js 后端零额外依赖**，开箱可用；**native 后端需要 C 工具链**
+（Windows 上是 MSVC Build Tools + Windows SDK）以及 OpenSSL 头文件
+（`moonbitlang/async` 的 TLS 依赖，Ubuntu 上装 `libssl-dev`）。
+CI 在两种后端上都执行全量测试。
 
 ## 能力范围
 
@@ -61,7 +82,7 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 
 ### 去重与队列（`bloom.mbt` / `frontier.mbt`）
 
-- 布隆过滤器：每元素 16 bit、7 哈希、误报率约 0.06%，十万级 URL 内存可控；
+- 布隆过滤器：每元素 16 bit、7 哈希、理论误报率约 0.07%；位用 `Array[UInt64]` 手工打包，十万 URL 约 200 KiB；
 - 游标式 FIFO（无大数组 shift 退化）、已见去重、按 host 的间隔推算；
 - `pop_batch(n)`：批量出队且**每个 host 最多一个**，为并发调度提供同站串行保证。
 
@@ -155,7 +176,7 @@ let rows = @mooncrawl.extract_records(html, "article.product_pod", [
   @mooncrawl.FieldSpec::text("price", ".price_color"),
 ])
 
-// 引擎：传输层可替换
+// 引擎：传输层可替换（需在 async fn 中调用）
 let stats = @mooncrawl.crawl(seed, options, @mooncrawl.http_fetch, on_page)
 ```
 
@@ -191,17 +212,18 @@ while 未达页数上限 {
 | 模块 | 文件 | 说明 | 测试 |
 | --- | --- | --- | --- |
 | URL | `url.mbt` | 解析、规范化（保留参数顺序）、相对展开 | 14 |
-| 去重 | `bloom.mbt` | 布隆过滤器（16 bit/元素，7 哈希） | 2 |
+| 去重 | `bloom.mbt` | 布隆过滤器（16 bit/元素，7 哈希，位打包） | 2 |
 | robots | `robots.mbt` | RFC 9309 组选择与匹配、状态码语义、Crawl-delay | 16 |
 | 队列 | `frontier.mbt` | FIFO（游标式）、`pop_batch` 按 host 分流、间隔推算 | 8 |
 | 引擎 | `crawl.mbt` | 三阶段异步调度、robots 集成、统计计数 | 13 |
 | 提取 | `extract.mbt` | `<a href>`、`<title>`、正文 | 5 |
 | 选择器 | `selector.mbt` | CSS 子集、字段映射、逐容器成表 | 10 |
 | 导出 | `export.mbt` | CSV（RFC 4180）、JSONL、通用字段行 | 7 |
+| 边界 | `boundary_test.mbt` | 跨模块边界用例（URL/robots/选择器/十万元素） | 5 |
 | 传输 | `fetch_http.mbt` | 官方 async http 适配：30s 超时、UA 透传 | — |
 | CLI | `cmd/main` | 页面模式 / 采集模式 | — |
 
-**75 个测试全部离线**：引擎对内存假站点运行（注入 fetch 闭包），
+**80 个测试全部离线**：引擎对内存假站点运行（注入 fetch 闭包），
 不依赖网络与时钟，CI 在 js 与 native 双后端执行全量测试 + `moon fmt` 门禁。
 
 ## 已知限制
@@ -251,7 +273,7 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 - [x] JSONL/CSV 导出（D5）
 - [x] 真实站点演示 + CLI 双模式（D5）
 - [x] CI 双目标门禁（D6）
-- [x] mooncakes.io 上架（`guangting0905/mooncrawl` v0.1.0，`moon publish` 已通过）
+- [x] mooncakes.io 上架（`guangting0905/mooncrawl` v0.1.1，`moon publish` 已通过）
 
 后续方向（季度/年度持续建设）：
 
@@ -263,8 +285,15 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 
 ## 开源合规
 
-Apache-2.0。项目为原创实现；依赖的 `moonbitlang/async`、
-`moonbit-community/html` 均为 Apache-2.0，按其许可证使用并在 `moon.mod` 声明。
+Apache-2.0，完整许可文本见 `LICENSE`。
+
+- **NOTICE**：第三方组件归属与所引用的规范清单见 [`NOTICE`](NOTICE)。
+  项目为原创实现，未复制或内联任何第三方源码；`moonbitlang/async`、
+  `moonbit-community/html` 均为 Apache-2.0，以 `moon.mod` 声明的方式作为依赖使用。
+- **规范引用**：RFC 3986（URL 规范化）、RFC 9309（robots.txt）、
+  RFC 4180（CSV）为文档而非代码，引用处以 `docs/` 与源码注释标注。
+- **打包范围**：`.moonignore` 控制发布内容，参赛材料（含联系方式与审核沟通记录）
+  不随包分发。
 
 ## 作者
 

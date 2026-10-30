@@ -1,0 +1,37 @@
+MoonCrawl
+Copyright 2026 guangting0905
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+Third-party components
+======================
+
+MoonCrawl links against the following libraries. No source code from these
+projects is copied, modified or vendored into this repository; they are
+consumed as declared dependencies in moon.mod.
+
+1. moonbitlang/async 0.22.5
+   Copyright 2025 International Digital Economy Academy
+   Licensed under the Apache License, Version 2.0
+   https://github.com/moonbitlang/async
+
+2. moonbit-community/html 0.2.2
+   Copyright 2025 International Digital Economy Academy
+   Licensed under the Apache License, Version 2.0
+   https://github.com/moonbit-community/html
+
+The MoonBit standard library (moonbitlang/core) is distributed together with
+the MoonBit toolchain under the Apache License, Version 2.0.
+
+External specifications referenced
+==================================
+
+The implementation follows the following specifications. They are documents,
+not code; no text is reproduced beyond short quotations needed for citation.
+
+- RFC 3986 — URI Generic Syntax (§6.2.2 syntax-based normalization,
+  §6.2.3 scheme-based normalization). See url.mbt.
+- RFC 9309 — Robots Exclusion Protocol. See robots.mbt and
+  docs/rfc9309-覆盖声明.md.
+- RFC 4180 — Common Format and MIME Type for CSV Files. See export.mbt.

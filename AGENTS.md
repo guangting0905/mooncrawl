@@ -51,3 +51,16 @@ You can browse and install extra skills here:
   scientific computations), prefer assertion tests. You can use
   `moon coverage analyze > uncovered.log` to see which parts of your code are
   not covered by tests.
+
+## 本项目的约定
+
+- **包结构**：根包 `guangting0905/mooncrawl` 同时包含纯逻辑模块（URL、去重、
+  robots、frontier、提取、选择器、导出）与异步引擎（`crawl.mbt`、
+  `fetch_http.mbt`）；`cmd/main` 是 CLI。
+- **后端边界**：根包 import `moonbitlang/async` 与 `async/http`，因此只支持
+  **js 与 native**。wasm-gc 不可用（`async/http` 无 wasm 实现）。若将来要把
+  纯逻辑模块提供给 wasm 用户，需要把引擎拆成子包，不要靠改文档掩盖。
+- **测试分层**：`*_test.mbt` 只打公开 API；引擎用注入的假 fetcher 做离线
+  端到端，断言统计与回调内容，不依赖网络与真实时钟。
+- **文档同步**：改动 URL 规范化策略或 robots 行为时，必须同步
+  `docs/rfc9309-覆盖声明.md` 与 README 的「已知限制」，不允许只改代码。

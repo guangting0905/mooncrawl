@@ -190,7 +190,8 @@ fn absolutize(base : @mooncrawl.Url, value : String) -> String {
     return value
   }
   let looks_relative = if cs[0] == '/' {
-    !(n > 1 && cs[1] == '/')
+    // "/x" 与 "//host/x"（scheme 相对）都要按 base 展开
+    true
   } else if cs[0] == '.' {
     (n > 1 && cs[1] == '/') || (n > 2 && cs[1] == '.' && cs[2] == '/')
   } else {
