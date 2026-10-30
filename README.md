@@ -4,6 +4,13 @@
 
 **MoonBit 的网页爬虫框架** —— 2026 MoonBit 黑客松 10 月赛参赛项目。
 
+已发布到 mooncakes.io：`guangting0905/mooncrawl@0.1.0`
+（[文档](https://mooncakes.io/docs/guangting0905/mooncrawl)）
+
+```bash
+moon add guangting0905/mooncrawl@0.1.0
+```
+
 MoonCrawl 把「抓网页 → 提数据 → 出结果」串成一条可复用流水线：URL 规范化、
 布隆去重、robots.txt 处理、按站点礼貌限速、跨 origin 异步调度、HTML 提取与
 CSS 选择器字段提取、JSONL / CSV 导出。**框架层是本项目的产出**——HTTP 客户端
@@ -244,6 +251,7 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 - [x] JSONL/CSV 导出（D5）
 - [x] 真实站点演示 + CLI 双模式（D5）
 - [x] CI 双目标门禁（D6）
+- [x] mooncakes.io 上架（`guangting0905/mooncrawl` v0.1.0，`moon publish` 已通过）
 
 后续方向（季度/年度持续建设）：
 

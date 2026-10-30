@@ -61,4 +61,4 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - **顺带修复 5 个实现缺陷**（均有测试覆盖）：① 礼貌调度把 64 位毫秒截断成 32 位，等待时长溢出导致 `sleep` 永不返回、抓取静默卡死（也是引擎测试在 js 后端无法完成的根因）；② robots 不可达时放行，违反 §2.3.1.4；③ 多个组匹配同一 UA 时未合并，违反 §2.2.1；④ `/robots.txt` 未隐式允许，违反 §2.2.2；⑤ robots.txt 未剥离 UTF-8 BOM，带 BOM 时整组规则失效。
 
-- **验证**：`moon test --target js` 75 个用例全部通过；CI 三 job（js / native / fmt）全绿；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。
+- **验证**：`moon test --target js` 75 个用例全部通过；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.0，`moon add guangting0905/mooncrawl@0.1.0` 可安装）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。
