@@ -161,3 +161,36 @@ test "robots: 真实风格文件端到端" {
   assert_eq(r.crawl_delay_ms("randombot"), Some(1000)) // 回退 * 组
   assert_eq(r.sitemaps().length(), 1)
 }
+
+///|
+test "robots: 百分号编码的 unreserved 字符参与比较（RFC 9309 §2.2.2）" {
+  // 规则写 %7E，请求写 ~：同一路径
+  let r1 = @mooncrawl.parse_robots("User-agent: *\nDisallow: /a%7Eb\n")
+  assert_true(!r1.allowed(UA, "/a~b"))
+  assert_true(r1.allowed(UA, "/a~c"))
+  // 反向：规则写 ~，请求写 %7E
+  let r2 = @mooncrawl.parse_robots("User-agent: *\nDisallow: /a~b\n")
+  assert_true(!r2.allowed(UA, "/a%7Eb"))
+  // 保留字符不解码：%2F 与 / 必须保持不同
+  let r3 = @mooncrawl.parse_robots("User-agent: *\nDisallow: /a%2Fb\n")
+  assert_true(r3.allowed(UA, "/a/b"))
+  assert_true(!r3.allowed(UA, "/a%2Fb"))
+  // 非法转义原样保留，规则照常生效
+  let r4 = @mooncrawl.parse_robots("User-agent: *\nDisallow: /a%zzb\n")
+  assert_true(!r4.allowed(UA, "/a%zzb/x"))
+}
+
+///|
+test "robots: 超过 1 MiB 的解析上限后截断（RFC 9309 §2.5）" {
+  let buf = StringBuilder()
+  buf.write_string("User-agent: *\nDisallow: /blocked\n")
+  let mut i = 0
+  while i < 1_100_000 {
+    buf.write_char('#')
+    i = i + 1
+  }
+  let r = @mooncrawl.parse_robots(buf.to_string())
+  // 截断点之前的规则必须照常生效
+  assert_true(!r.allowed(UA, "/blocked"))
+  assert_true(r.allowed(UA, "/other"))
+}

@@ -34,6 +34,76 @@ priv struct AgentGroup {
 }
 
 ///|
+/// RFC 3986 的 unreserved 字符集：ALPHA / DIGIT / "-" / "." / "_" / "~"。
+fn is_unreserved(c : Char) -> Bool {
+  (c >= 'a' && c <= 'z') ||
+  (c >= 'A' && c <= 'Z') ||
+  (c >= '0' && c <= '9') ||
+  c == '-' ||
+  c == '.' ||
+  c == '_' ||
+  c == '~'
+}
+
+///|
+fn hex_val(c : Char) -> Int32? {
+  if c >= '0' && c <= '9' {
+    return Some(c.to_int() - '0'.to_int())
+  }
+  if c >= 'a' && c <= 'f' {
+    return Some(c.to_int() - 'a'.to_int() + 10)
+  }
+  if c >= 'A' && c <= 'F' {
+    return Some(c.to_int() - 'A'.to_int() + 10)
+  }
+  None
+}
+
+///|
+/// RFC 9309 §2.2.2：比较前把 `%XX` 形式的 **unreserved** 字符解码，
+/// 保留字符（如 `%2F`）、非 ASCII 编码与非法转义原样保留。
+///
+/// 规则与请求两侧都要过这一层，`/a%7Eb` 与 `/a~b` 才能判为同一路径；
+/// 而 `/a%2Fb` 与 `/a/b` 必须保持不同（`/` 是保留字符）。
+fn decode_unreserved(s : String) -> String {
+  let cs = chars_of(s)
+  let n : Int32 = cs.length()
+  let buf = StringBuilder()
+  let mut i : Int32 = 0
+  while i < n {
+    if cs[i] == '%' && i + 2 < n {
+      let hi = hex_val(cs[i + 1])
+      let lo = hex_val(cs[i + 2])
+      match (hi, lo) {
+        (Some(h), Some(l)) => {
+          let v = h * 16 + l
+          // unreserved 全在 ASCII 范围，超出即保留原样
+          if v < 128 {
+            let c = v.to_char().unwrap()
+            if is_unreserved(c) {
+              buf.write_char(c)
+              i = i + 3
+              continue
+            }
+          }
+          buf.write_char('%')
+          i = i + 1
+        }
+        _ => {
+          buf.write_char('%')
+          i = i + 1
+        }
+      }
+    } else {
+      buf.write_char(cs[i])
+      i = i + 1
+    }
+  }
+  buf.to_string()
+}
+
+///|
+/// 逐字节（字符）匹配：`*` 匹配任意序列，结尾 `$` 锚定。
 fn glob_match(pattern : String, path : String) -> Bool {
   let mut pat = pattern
   let mut anchored : Bool = false
@@ -160,6 +230,10 @@ fn parse_delay_ms(v : String) -> Int32? {
 }
 
 ///|
+/// robots.txt 的解析上限（字符数）。1 MiB 高于 RFC 9309 §2.5 要求的 500 KiB。
+const ROBOTS_MAX_CHARS : Int32 = 1_048_576
+
+///|
 /// 去掉 UTF-8 BOM 与开头空白。带 BOM 的文件若原样解析，第一条
 /// `User-agent` 行会因前导 U+FEFF 变成无法识别的指令，整组规则失效。
 fn strip_leading_noise(text : String) -> String {
@@ -190,11 +264,18 @@ fn new_group(pending : Array[String]) -> AgentGroup {
 /// 解析 robots.txt 文本。容错：忽略注释与无法识别的行；
 /// 空的 Disallow/Allow 值视为无操作。
 pub fn parse_robots(text : String) -> RobotsRules {
+  // RFC 9309 §2.5：解析限额不得低于 500 KiB。这里取 1 MiB，超出部分截断，
+  // 防止畸形文件把内存吃穿；截断点之前的规则照常生效。
+  let body = if text.length() > ROBOTS_MAX_CHARS {
+    slice(chars_of(text), 0, ROBOTS_MAX_CHARS)
+  } else {
+    text
+  }
   let groups : Array[AgentGroup] = []
   let sitemaps : Array[String] = []
   let mut pending : Array[String] = []
   let mut cur : AgentGroup? = None
-  let lines = split_lines(strip_leading_noise(text))
+  let lines = split_lines(strip_leading_noise(body))
   for line in lines {
     // 去注释
     let hash = find_char(line, '#')
@@ -237,7 +318,7 @@ pub fn parse_robots(text : String) -> RobotsRules {
             if value != "" {
               match cur {
                 Some(g) => {
-                  let _ = g.rules.push((allow, value))
+                  let _ = g.rules.push((allow, decode_unreserved(value)))
                 }
                 None => ()
               }
@@ -456,11 +537,12 @@ pub fn RobotsRules::allowed(
   if eff.rules.length() == 0 {
     return true
   }
+  let path_octets = decode_unreserved(path)
   let mut best_len : Int32 = -1
   let mut verdict : Bool = true
   for entry in eff.rules {
     let (allow, pat) = entry
-    if glob_match(pat, path) {
+    if glob_match(pat, path_octets) {
       let plen = chars_of(pat).length()
       if plen > best_len || (plen == best_len && allow) {
         best_len = plen

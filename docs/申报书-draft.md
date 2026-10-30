@@ -21,9 +21,9 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - 提供布隆过滤器去重模块（每元素 16 bit、7 哈希、理论误报率约 0.07%，位用 UInt64 手工打包，十万 URL 约 200 KiB），支撑十万级 URL 的内存可控去重；
 
-- 提供 robots.txt 解析与匹配（RFC 9309）：User-agent 分组大小写不敏感前缀匹配、多个组匹配同一 UA 时合并、Allow/Disallow 最长模式优先与等长 Allow 优先、`*` 与 `$` 通配、`/robots.txt` 隐式允许、Crawl-delay 毫秒化解析与 Sitemap 收集；
+- 提供 robots.txt 解析与匹配（RFC 9309）：User-agent 分组大小写不敏感前缀匹配、多个组匹配同一 UA 时合并、Allow/Disallow 最长模式优先与等长 Allow 优先、`*` 与 `$` 通配、比较前解码 unreserved 字符的百分号编码、`/robots.txt` 隐式允许、Crawl-delay 毫秒化解析与 Sitemap 收集；
 
-- 提供 robots.txt 状态码语义（RFC 9309 §2.3.1）：2xx 解析执行、4xx 视为不可用并放行、**5xx 与网络错误默认视为完全禁止**（可按需显式改为放行），未覆盖项（百分号解码、重定向链、缓存时效、解析体积上限）在 docs/rfc9309-覆盖声明.md 中逐条列明；
+- 提供 robots.txt 状态码语义（RFC 9309 §2.3.1）：2xx 解析执行、4xx 视为不可用并放行、**5xx 与网络错误默认视为完全禁止**（可按需显式改为放行），解析上限 1 MiB（截断后前部规则照常生效）；未覆盖项（重定向链、缓存时效）在 docs/rfc9309-覆盖声明.md 中逐条列明；
 
 - 提供 URL 前沿队列（frontier）：游标式 FIFO（无大数组 shift 退化）、已见去重整合、按 host 的请求间隔推算，以及按 host 分流的批量出队 `pop_batch`，为并发调度提供同站串行保证；
 
@@ -39,7 +39,7 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - 提供命令行入口 `mooncrawl`（moonbitlang/core/argparse）两种模式：页面模式输出每页元数据，采集模式经 `--container` 与 `--fields` 按选择器逐条提取记录，并把字段值中的相对链接自动展开为绝对 URL；
 
-- 提供 80 个 MoonBit 测试并持续保持核心回归测试通过，其中引擎与调度用例全部离线运行（注入假 fetcher，不依赖网络与时钟）；GitHub Actions CI 在 js 与 native 双后端执行全量测试与 moon fmt 格式门禁（wasm-gc 不支持：引擎依赖的 moonbitlang/async/http 无 wasm 实现）；
+- 提供 82 个 MoonBit 测试并持续保持核心回归测试通过，其中引擎与调度用例全部离线运行（注入假 fetcher，不依赖网络与时钟）；GitHub Actions CI 在 js 与 native 双后端执行全量测试与 moon fmt 格式门禁（wasm-gc 不支持：引擎依赖的 moonbitlang/async/http 无 wasm 实现）；
 
 - 提供 README 示例，覆盖库调用（规范化/展开/去重/robots/选择器/引擎）与 CLI 双模式的真实输出，以及架构图、模块-测试对照表与已知限制清单；并提供 docs/rfc9309-覆盖声明.md 作为 robots 处理的外部一致性证据。
 
@@ -51,7 +51,7 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - **查询参数排序不再作为资源等价依据**：默认保留 query 原始顺序，排序改为独立的显式 API `normalize_url_sorted_query`，函数名与文档说明启用前提；取舍（同一资源可能被抓两次）写入 README 已知限制第 1 条。
 
-- **robots 处理从「协议子集」改为逐条对照 RFC 9309**：补齐 §2.2.1 多组匹配合并、§2.2.2 `/robots.txt` 隐式允许、§2.3.1.4 5xx 与网络错误默认完全禁止、UTF-8 BOM 剥离；新增 docs/rfc9309-覆盖声明.md，按 MUST/SHOULD 列出实现状态、对应测试与**明确不做的 4 项**（百分号解码比较、重定向链、缓存时效、500 KiB 解析上限）。承诺范围收敛为「§2.2 匹配算法 + §2.3.1 状态码语义」。
+- **robots 处理从「协议子集」改为逐条对照 RFC 9309**：补齐 §2.2.1 多组匹配合并、§2.2.2 `/robots.txt` 隐式允许、§2.3.1.4 5xx 与网络错误默认完全禁止、UTF-8 BOM 剥离；新增 docs/rfc9309-覆盖声明.md，按 MUST/SHOULD 列出实现状态与对应测试。随后补齐 §2.2.2 的百分号解码（unreserved 字符）与 §2.5 的 1 MiB 解析上限，**§2.2 与 §2.3.1 的 MUST 条款现已全部实现**；仅剩两项 SHOULD（重定向链、缓存时效）明确不做，且都在传输层/调用方一侧。
 
 - **项目定位调整为通用爬虫框架**：「声明式网页采集」不再是项目定位，降为提取层的可选特性——不配置选择器时就是普通爬虫，配置后才做字段采集。
 
@@ -63,6 +63,6 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - **开源合规**：Apache-2.0，LICENSE 全文入库；新增 NOTICE，列明第三方组件（moonbitlang/async、moonbit-community/html，均 Apache-2.0，Copyright 2025 International Digital Economy Academy）与所引用的规范（RFC 3986 / 9309 / 4180）；`.moonignore` 控制打包范围，参赛材料不随包分发。
 
-- **已知限制**（完整清单见 README「已知限制」）：查询参数顺序默认不折叠，同一资源可能被抓两次；robots 的百分号解码、重定向链、缓存时效、解析体积上限未覆盖；不做 JS 渲染与 XPath；单机内存队列，不支持分布式调度；同 origin 串行，单站点吞吐受 `delay_ms` 限制。
+- **已知限制**（完整清单见 README「已知限制」）：查询参数顺序默认不折叠，同一资源可能被抓两次；robots 的重定向链与缓存时效不处理；不做 JS 渲染与 XPath；单机内存队列，不支持分布式调度；同 origin 串行，单站点吞吐受 `delay_ms` 限制。
 
-- **验证**：`moon test --target js` 80 个用例全部通过；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.1，`moon add guangting0905/mooncrawl@0.1.1` 可安装）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。
+- **验证**：`moon test --target js` 82 个用例全部通过；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.2，`moon add guangting0905/mooncrawl@0.1.2` 可安装）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。

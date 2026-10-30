@@ -4,11 +4,11 @@
 
 **MoonBit 的网页爬虫框架** —— 2026 MoonBit 黑客松 10 月赛参赛项目。
 
-已发布到 mooncakes.io：`guangting0905/mooncrawl@0.1.1`
+已发布到 mooncakes.io：`guangting0905/mooncrawl@0.1.2`
 （[文档](https://mooncakes.io/docs/guangting0905/mooncrawl)）
 
 ```bash
-moon add guangting0905/mooncrawl@0.1.1
+moon add guangting0905/mooncrawl@0.1.2
 ```
 
 MoonCrawl 把「抓网页 → 提数据 → 出结果」串成一条可复用流水线：URL 规范化、
@@ -40,13 +40,13 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 作为依赖：
 
 ```bash
-moon add guangting0905/mooncrawl@0.1.1
+moon add guangting0905/mooncrawl@0.1.2
 ```
 
 从源码构建与测试：
 
 ```bash
-moon test --target js     # 80 个离线测试
+moon test --target js     # 82 个离线测试
 moon run cmd/main --target js -- https://books.toscrape.com/ --max-pages 12 --depth 1
 ```
 
@@ -76,6 +76,9 @@ CI 在两种后端上都执行全量测试。
 - §2.2.1 组选择：大小写不敏感前缀匹配、**多组匹配时合并**、`*` 组回退；
 - §2.2.2 匹配：从首字节匹配、最长模式优先、等长 Allow 优先、`/robots.txt` 隐式允许；
 - §2.2.3 特殊字符：`#` 注释、`*` 通配、`$` 锚定；
+- §2.2.2 百分号解码：比较前解码 unreserved 字符的 `%XX`（`%7E` 与 `~` 视为同一
+  路径），`%2F` 等保留字符不解码；
+- §2.5 解析上限：1 MiB 截断，截断点之前的规则照常生效；
 - §2.3.1 状态码：2xx 执行、4xx 放行、**5xx 与网络错误默认完全禁止**
   （`RobotsUnreachable::Disallow`，可按需改为 `Allow`）；
 - 扩展：`Crawl-delay` 解析并在合并组时取最大值，只抬高不降低请求间隔。
@@ -213,7 +216,7 @@ while 未达页数上限 {
 | --- | --- | --- | --- |
 | URL | `url.mbt` | 解析、规范化（保留参数顺序）、相对展开 | 14 |
 | 去重 | `bloom.mbt` | 布隆过滤器（16 bit/元素，7 哈希，位打包） | 2 |
-| robots | `robots.mbt` | RFC 9309 组选择与匹配、状态码语义、Crawl-delay | 16 |
+| robots | `robots.mbt` | RFC 9309 组选择与匹配、百分号解码、状态码语义、Crawl-delay | 18 |
 | 队列 | `frontier.mbt` | FIFO（游标式）、`pop_batch` 按 host 分流、间隔推算 | 8 |
 | 引擎 | `crawl.mbt` | 三阶段异步调度、robots 集成、统计计数 | 13 |
 | 提取 | `extract.mbt` | `<a href>`、`<title>`、正文 | 5 |
@@ -223,7 +226,7 @@ while 未达页数上限 {
 | 传输 | `fetch_http.mbt` | 官方 async http 适配：30s 超时、UA 透传 | — |
 | CLI | `cmd/main` | 页面模式 / 采集模式 | — |
 
-**80 个测试全部离线**：引擎对内存假站点运行（注入 fetch 闭包），
+**82 个测试全部离线**：引擎对内存假站点运行（注入 fetch 闭包），
 不依赖网络与时钟，CI 在 js 与 native 双后端执行全量测试 + `moon fmt` 门禁。
 
 ## 已知限制
@@ -234,15 +237,13 @@ while 未达页数上限 {
    同一资源可能被抓两次。这是有意的保守取舍：参数顺序在部分服务端是语义
    （签名、重复键、按位置读参）。确认目标站点无序时用
    `normalize_url_sorted_query`。
-2. **robots 的百分号解码未实现**。`%7E` 与 `~` 不视为同一路径，
-   规则可能少匹配或多匹配。详见覆盖声明表。
-3. **不处理重定向链**。跟随行为交给传输层，不校验 5 次上限。
-4. **robots 缓存不持久化**。只在单次 `crawl` 调用内有效，不跨进程。
-5. **robots.txt 无体积上限**。超大文件会全量解析（RFC 建议 ≥500 KiB 限额）。
-6. **不做 JS 渲染**。只解析服务端返回的 HTML，SPA 站点需要在渲染层另行解决。
-7. **不做 XPath**。选择器只覆盖 CSS 子集。
-8. **单机内存队列**。URL 全量驻留内存（布隆过滤器只做去重），不支持分布式调度。
-9. **同 origin 串行**。跨 origin 才并行；单站点抓取的吞吐受 `delay_ms` 限制。
+2. **不处理重定向链**。robots.txt 的重定向跟随交给传输层，本模块不解析
+   重定向链，也不校验 RFC 9309 §2.3.1.2 的「5 次」上限。
+3. **robots 缓存不持久化**。只在单次 `crawl` 调用内有效，不跨进程。
+4. **不做 JS 渲染**。只解析服务端返回的 HTML，SPA 站点需要在渲染层另行解决。
+5. **不做 XPath**。选择器只覆盖 CSS 子集。
+6. **单机内存队列**。URL 全量驻留内存（布隆过滤器只做去重），不支持分布式调度。
+7. **同 origin 串行**。跨 origin 才并行；单站点抓取的吞吐受 `delay_ms` 限制。
 
 ## 工程实践
 
@@ -273,7 +274,7 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 - [x] JSONL/CSV 导出（D5）
 - [x] 真实站点演示 + CLI 双模式（D5）
 - [x] CI 双目标门禁（D6）
-- [x] mooncakes.io 上架（`guangting0905/mooncrawl` v0.1.1，`moon publish` 已通过）
+- [x] mooncakes.io 上架（`guangting0905/mooncrawl` v0.1.2，`moon publish` 已通过）
 
 后续方向（季度/年度持续建设）：
 
