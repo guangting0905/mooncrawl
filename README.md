@@ -4,11 +4,11 @@
 
 **MoonBit 的网页爬虫框架** —— 2026 MoonBit 黑客松 10 月赛参赛项目。
 
-已发布到 mooncakes.io：`guangting0905/mooncrawl@0.1.3`
+已发布到 mooncakes.io：`guangting0905/mooncrawl@0.1.4`
 （[文档](https://mooncakes.io/docs/guangting0905/mooncrawl)）
 
 ```bash
-moon add guangting0905/mooncrawl@0.1.3
+moon add guangting0905/mooncrawl@0.1.4
 ```
 
 MoonCrawl 把「抓网页 → 提数据 → 出结果」串成一条可复用流水线：URL 规范化、
@@ -40,7 +40,7 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 作为依赖：
 
 ```bash
-moon add guangting0905/mooncrawl@0.1.3
+moon add guangting0905/mooncrawl@0.1.4
 ```
 
 从源码构建与测试：
@@ -324,7 +324,7 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 - [x] JSONL/CSV 导出（D5）
 - [x] 真实站点演示 + CLI 双模式（D5）
 - [x] CI 双目标门禁（D6）
-- [x] mooncakes.io 上架（`guangting0905/mooncrawl` v0.1.3，`moon publish` 已通过）
+- [x] mooncakes.io 上架（`guangting0905/mooncrawl` v0.1.4，`moon publish` 已通过）
 - [x] robots 比较前的双向百分号统一（解码 unreserved + 非 ASCII 编码）（D7）
 - [x] 通配符匹配改为线性双指针，消除指数回溯（D7）
 - [x] 去重容量参数化 + 饱和度观测 + CLI 告警（D7）
