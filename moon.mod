@@ -10,7 +10,7 @@ license = "Apache-2.0"
 
 keywords = [ "crawler", "spider", "scraping", "robots-txt", "url" ]
 
-preferred_target = "native"
+preferred_target = "js"
 
 description = "A web crawling framework for MoonBit: URL normalization, RFC 9309 robots handling, polite async scheduling, CSS-selector extraction and structured export."
 
