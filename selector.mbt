@@ -196,7 +196,9 @@ fn tokenize_selector(input : String) -> Array[SelTok]? {
     } else if c == '>' {
       // 覆盖掉紧邻的后代组合子
       match out.length() {
-        0 => ()
+        0 =>
+          // 链首出现子代组合子（如 "> p"）不是合法 CSS，按「不猜」原则拒绝
+          return None
         _ =>
           match out[out.length() - 1] {
             TDesc => out[out.length() - 1] = TChild
@@ -290,7 +292,14 @@ pub fn Selector::parse(input : String) -> Selector {
           next_comb = ""
         }
         TDesc => next_comb = " "
-        _ => next_comb = ">"
+        _ => {
+          // 子代组合子必须紧跟在一个复合选择器之后；出现在逗号后或
+          // 链首（`div, > p` / `> p`）都不是合法 CSS，拒绝而不是忽略
+          if simples.length() == 0 && chain.length() == 0 {
+            return Selector::empty()
+          }
+          next_comb = ">"
+        }
       }
       continue
     }
@@ -313,6 +322,11 @@ pub fn Selector::parse(input : String) -> Selector {
   }
   if chain.length() > 0 {
     chains.push(chain)
+  }
+  // 悬空的子代组合子（如 "div >"）后面没有复合选择器，不是合法 CSS。
+  // 尾部空白不在此列——那是合法的书写差异。
+  if next_comb == ">" {
+    return Selector::empty()
   }
   { chains, }
 }

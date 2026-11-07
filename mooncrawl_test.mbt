@@ -155,3 +155,14 @@ test "bloom: 未添加键误报率低于 2%" {
   // 理论误报约 0.6 个（0.06%），留工程余量
   assert_true(fp < 20)
 }
+
+///|
+test "parse_url: 主机名含非法字符被拒" {
+  assert_true(@mooncrawl.parse_url("http://exa mple.com/x") is None)
+  assert_true(@mooncrawl.parse_url("http://a.com\n/x") is None)
+  // 非 ASCII 主机名必须走 punycode，这里不猜
+  assert_true(@mooncrawl.parse_url("http://例子.com/") is None)
+  // 合法字符（含 sub-delims、下划线、点、连字符）不受影响
+  assert_true(@mooncrawl.parse_url("http://a-b.c_d.example.com/") is Some(_))
+  assert_true(@mooncrawl.parse_url("http://[::1]:8080/x") is Some(_))
+}

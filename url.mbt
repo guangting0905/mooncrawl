@@ -151,8 +151,58 @@ fn split_port(
 }
 
 ///|
+/// RFC 3986 reg-name 允许的字符：unreserved + sub-delims + `%`（pct-encoded）。
+/// 不逐位校验转义序列的合法性——宽松到「不会把明显的垃圾当成主机名」即可。
+fn is_host_char(c : Char) -> Bool {
+  (c >= 'a' && c <= 'z') ||
+  (c >= 'A' && c <= 'Z') ||
+  (c >= '0' && c <= '9') ||
+  c == '-' ||
+  c == '.' ||
+  c == '_' ||
+  c == '~' ||
+  c == '!' ||
+  c == '$' ||
+  c == '&' ||
+  c == '\'' ||
+  c == '(' ||
+  c == ')' ||
+  c == '*' ||
+  c == '+' ||
+  c == ',' ||
+  c == ';' ||
+  c == '=' ||
+  c == '%'
+}
+
+///|
+/// 主机名合法性校验。
+///
+/// 方括号包裹的 IPv6 字面量只查首尾配对，其余按 reg-name 字符集逐字符检查。
+/// 没有这一层时，`http://exa mple.com/x` 这类畸形地址会被解析成功，随后
+/// 变成一个必然失败的请求，干扰抓取统计。
+fn is_valid_host(h : String) -> Bool {
+  let cs = chars_of(h)
+  let n : Int32 = cs.length()
+  if n == 0 {
+    return false
+  }
+  if cs[0] == '[' {
+    return n >= 3 && cs[n - 1] == ']'
+  }
+  let mut i : Int32 = 0
+  while i < n {
+    if !is_host_char(cs[i]) {
+      return false
+    }
+    i = i + 1
+  }
+  true
+}
+
+///|
 /// 解析绝对 http/https URL。
-/// 非绝对地址、非 http(s) 协议或端口非法时返回 None。
+/// 非绝对地址、非 http(s) 协议、端口非法或主机名含非法字符时返回 None。
 pub fn parse_url(input : String) -> Url? {
   let s = chars_of(input)
   let full_n : Int32 = s.length()
@@ -218,6 +268,9 @@ pub fn parse_url(input : String) -> Url? {
     None => return None
   }
   if host_raw.length() == 0 {
+    return None
+  }
+  if !is_valid_host(host_raw) {
     return None
   }
   let query = if query_start >= 0 {

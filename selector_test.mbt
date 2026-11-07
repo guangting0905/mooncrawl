@@ -109,3 +109,22 @@ test "selector: 字段选择器不越过容器边界" {
   assert_eq(rows[0][0], ("title", ""))
   assert_eq(rows[1][0], ("title", "X"))
 }
+
+///|
+test "selector: 畸形语法返回空选择器而不是静默降级" {
+  let html = "<div><p>x</p></div>"
+  // 链首子代组合子（CSS 里非法）
+  assert_eq(@mooncrawl.select_count(html, "> p"), 0)
+  // 逗号后的子代组合子
+  assert_eq(@mooncrawl.select_count(html, "div, > p"), 0)
+  // 悬空的子代组合子
+  assert_eq(@mooncrawl.select_count(html, "div >"), 0)
+  // 不支持的伪类
+  assert_eq(@mooncrawl.select_count(html, "p:last-child"), 0)
+  // 合法语法不受影响
+  assert_eq(@mooncrawl.select_count(html, "div > p"), 1)
+  assert_eq(@mooncrawl.select_count(html, "div p"), 1)
+  // 尾部空白是合法书写差异，不应被判为畸形
+  assert_eq(@mooncrawl.select_count(html, "div  "), 1)
+  assert_eq(@mooncrawl.select_count(html, "  div"), 1)
+}
