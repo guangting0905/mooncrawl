@@ -181,6 +181,81 @@ test "robots: 百分号编码的 unreserved 字符参与比较（RFC 9309 §2.2.
 }
 
 ///|
+test "robots: 非 ASCII 路径两侧编码形式一致（RFC 9309 §2.2.2）" {
+  // 规则写原文，请求写百分号编码：同一路径
+  let r1 = @mooncrawl.parse_robots("User-agent: *\nDisallow: /café\n")
+  assert_true(!r1.allowed(UA, "/caf%C3%A9"))
+  assert_true(!r1.allowed(UA, "/café"))
+  assert_true(r1.allowed(UA, "/cafes"))
+  // 反向：规则写百分号编码，请求写原文
+  let r2 = @mooncrawl.parse_robots("User-agent: *\nDisallow: /caf%C3%A9\n")
+  assert_true(!r2.allowed(UA, "/café"))
+  // 三字节 UTF-8（中文）
+  let r3 = @mooncrawl.parse_robots("User-agent: *\nDisallow: /文档\n")
+  assert_true(!r3.allowed(UA, "/%E6%96%87%E6%A1%A3"))
+  assert_true(r3.allowed(UA, "/%E6%96%87%E6%A1%A4"))
+  // 十六进制位大小写等价（RFC 3986 §6.2.2.1）
+  let r4 = @mooncrawl.parse_robots("User-agent: *\nDisallow: /caf%c3%a9\n")
+  assert_true(!r4.allowed(UA, "/caf%C3%A9"))
+}
+
+///|
+test "robots: 不属于任何组的裸规则被忽略（RFC 9309 §2.2.2）" {
+  let r = @mooncrawl.parse_robots(
+    "Disallow: /secret\nUser-agent: *\nDisallow: /other\n",
+  )
+  assert_true(r.allowed(UA, "/secret"))
+  assert_true(!r.allowed(UA, "/other"))
+  // 整份文件只有裸规则：无规则适用，全部允许
+  let r2 = @mooncrawl.parse_robots("Disallow: /\nCrawl-delay: 1\n")
+  assert_true(r2.allowed(UA, "/x"))
+  assert_eq(r2.crawl_delay_ms(UA), None)
+}
+
+///|
+test "robots: 通配符模式不产生指数回溯" {
+  // 20 个 * 的规则 + 36 字符路径。逐字符递归的旧实现会在这种输入上
+  // 组合数爆炸（实测 16 个 * 就超过 45 秒），本用例同时钉住性能与结果。
+  let buf = StringBuilder()
+  buf.write_string("User-agent: *\nDisallow: /a")
+  let mut i = 0
+  while i < 20 {
+    buf.write_string("*a")
+    i = i + 1
+  }
+  buf.write_string("b\n")
+  let r = @mooncrawl.parse_robots(buf.to_string())
+  let mut path = "/"
+  let mut j = 0
+  while j < 36 {
+    path = path + "a"
+    j = j + 1
+  }
+  // 模式要求以 b 结尾，路径没有 b：必为允许
+  assert_true(r.allowed(UA, path))
+  // 重复判定 200 次，线性实现瞬间完成
+  let mut k = 0
+  while k < 200 {
+    let _ = r.allowed(UA, path)
+    k = k + 1
+  }
+}
+
+///|
+test "robots: 通配符边界——连续 *、末尾 * 与 $ 组合" {
+  let r = @mooncrawl.parse_robots(
+    "User-agent: *\nDisallow: /a**b\nDisallow: /c$\n",
+  )
+  assert_true(!r.allowed(UA, "/axxb"))
+  assert_true(!r.allowed(UA, "/ab"))
+  assert_true(!r.allowed(UA, "/c"))
+  assert_true(r.allowed(UA, "/cd"))
+  // `*` 可吃掉任意长度，因此 `/c*$` 对任意以 /c 开头的路径都成立
+  let r2 = @mooncrawl.parse_robots("User-agent: *\nDisallow: /c*$\n")
+  assert_true(!r2.allowed(UA, "/cddddx"))
+}
+
+///|
 test "robots: 超过 1 MiB 的解析上限后截断（RFC 9309 §2.5）" {
   let buf = StringBuilder()
   buf.write_string("User-agent: *\nDisallow: /blocked\n")

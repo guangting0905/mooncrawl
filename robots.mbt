@@ -1,18 +1,26 @@
 // robots.txt 解析与匹配。
 //
 // 覆盖范围（逐条对应 RFC 9309，详见 docs/rfc9309-覆盖声明.md）：
-// - §2.2.1 组选择：product token 大小写不敏感前缀匹配；多个组匹配同一
-//   UA 时**合并**为一组解析；无具体匹配时回退 `*` 组；都没有则无规则。
-// - §2.2.2 匹配：从路径第一个字节起匹配，最具体（最多字节）的规则胜出；
+// - §2.2.1 组选择：product token 大小写不敏感前缀匹配；同名 UA 分散在
+//   多组时规则合并；多个**不同长度**的 token 同时匹配时取最长的一个
+//   （这是对 RFC 字面「合并全部匹配组」的有意偏离，与主流爬虫一致，
+//   理由与影响见覆盖声明 §1.1）；无具体匹配时回退 `*` 组；都没有则无规则。
+// - §2.2.2 匹配：从路径第一个字节起匹配，最具体（最多八位组）的规则胜出；
 //   Allow 与 Disallow 等长时 Allow 优先；组内无规则则允许；/robots.txt
-//   隐式允许。
+//   隐式允许；不属于任何组的规则被忽略。
+// - §2.2.2 百分号：比较前把两侧统一到同一形式——`%XX` 中的 unreserved
+//   字符解码、十六进制位统一大写、非 ASCII 字符编码为 UTF-8 的 `%XX`。
 // - §2.2.3 特殊字符：`#` 行内注释、`*` 任意序列、`$` 锚定结尾。
 //
 // 不在覆盖范围内（明确不承诺）：
-// - §2.2.2 的百分号解码比较：`%7E` 与 `~` 不视为同一路径。
+// - §2.2.2「匹配字面 `*`/`$` 时用 `%` 编码」：请求侧的 ASCII 保留字符不做
+//   编码（否则与现实中大量未编码的 robots 规则不兼容），因此规则里的
+//   `%2A` 无法命中请求路径中的字面 `*`。该条为 SHOULD。
 // - §2.3.1.2 重定向链：跟随行为交给传输层，本模块不解析重定向。
-// - §2.4 缓存时效、§2.5 500 KiB 解析上限：由调用方（引擎/用户）决定。
-// 状态码语义（4xx 放行 / 5xx 拒绝）在 crawl.mbt 中实现，见 RobotsPolicy。
+// - §2.4 缓存时效：缓存仅在单次 crawl 调用内有效，不跨进程。
+// - §2.5 解析上限：本模块把规则文本截断到 1 MiB（满足「MUST ≥ 500 KiB」），
+//   但该上限只约束解析，不约束下载与解码阶段的内存峰值。
+// 状态码语义（4xx 放行 / 5xx 拒绝）在 crawl.mbt 中实现，见 RobotsUnreachable。
 //
 // 匹配约定与主流实现一致：
 // - 规则匹配：`*` 匹配任意序列，结尾 `$` 锚定路径末尾；
@@ -60,42 +68,73 @@ fn hex_val(c : Char) -> Int32? {
 }
 
 ///|
-/// RFC 9309 §2.2.2：比较前把 `%XX` 形式的 **unreserved** 字符解码，
-/// 保留字符（如 `%2F`）、非 ASCII 编码与非法转义原样保留。
+/// 把一个字节写成 `%XX`（大写十六进制）。
+fn write_pct_byte(buf : StringBuilder, b : Int32) -> Unit {
+  let hex = "0123456789ABCDEF"
+  let hcs = chars_of(hex)
+  buf.write_char('%')
+  buf.write_char(hcs[b / 16 % 16])
+  buf.write_char(hcs[b % 16])
+}
+
+///|
+/// 把一个 Unicode 码点按 UTF-8 编码写成百分号转义序列。
+fn write_utf8_pct(buf : StringBuilder, cp : Int32) -> Unit {
+  if cp < 0x80 {
+    write_pct_byte(buf, cp)
+  } else if cp < 0x800 {
+    write_pct_byte(buf, 0xC0 | (cp >> 6))
+    write_pct_byte(buf, 0x80 | (cp & 0x3F))
+  } else if cp < 0x10000 {
+    write_pct_byte(buf, 0xE0 | (cp >> 12))
+    write_pct_byte(buf, 0x80 | ((cp >> 6) & 0x3F))
+    write_pct_byte(buf, 0x80 | (cp & 0x3F))
+  } else {
+    write_pct_byte(buf, 0xF0 | (cp >> 18))
+    write_pct_byte(buf, 0x80 | ((cp >> 12) & 0x3F))
+    write_pct_byte(buf, 0x80 | ((cp >> 6) & 0x3F))
+    write_pct_byte(buf, 0x80 | (cp & 0x3F))
+  }
+}
+
+///|
+/// RFC 9309 §2.2.2 要求的「比较前统一编码形式」。
 ///
-/// 规则与请求两侧都要过这一层，`/a%7Eb` 与 `/a~b` 才能判为同一路径；
-/// 而 `/a%2Fb` 与 `/a/b` 必须保持不同（`/` 是保留字符）。
-fn decode_unreserved(s : String) -> String {
+/// 规则文本与请求路径两侧都过这一层，得到可直接逐字符比较的形式：
+/// - `%XX` 且该字节是 unreserved（ALPHA / DIGIT / `-` `.` `_` `~`）→ 解码；
+/// - 其余 `%XX` → 原样保留，但十六进制位统一大写（RFC 3986 §6.2.2.1）；
+/// - 非 ASCII 字符 → 按 UTF-8 编码成 `%XX`（§2.2.2 前半句的 MUST）。
+///
+/// 因此 `/a%7Eb` 与 `/a~b` 判为同一路径，`/café` 与 `/caf%C3%A9` 亦然；
+/// 而 `/a%2Fb` 与 `/a/b` 必须保持不同（`/` 是保留字符，不解码）。
+fn normalize_compare_form(s : String) -> String {
   let cs = chars_of(s)
   let n : Int32 = cs.length()
   let buf = StringBuilder()
   let mut i : Int32 = 0
   while i < n {
-    if cs[i] == '%' && i + 2 < n {
-      let hi = hex_val(cs[i + 1])
-      let lo = hex_val(cs[i + 2])
-      match (hi, lo) {
+    let c = cs[i]
+    if c == '%' && i + 2 < n {
+      match (hex_val(cs[i + 1]), hex_val(cs[i + 2])) {
         (Some(h), Some(l)) => {
           let v = h * 16 + l
-          // unreserved 全在 ASCII 范围，超出即保留原样
-          if v < 128 {
-            let c = v.to_char().unwrap()
-            if is_unreserved(c) {
-              buf.write_char(c)
-              i = i + 3
-              continue
-            }
+          if v < 128 && is_unreserved(v.to_char().unwrap()) {
+            buf.write_char(v.to_char().unwrap())
+          } else {
+            write_pct_byte(buf, v)
           }
-          buf.write_char('%')
-          i = i + 1
+          i = i + 3
         }
         _ => {
           buf.write_char('%')
           i = i + 1
         }
       }
+    } else if c.to_int() < 128 {
+      buf.write_char(c)
+      i = i + 1
     } else {
-      buf.write_char(cs[i])
+      write_utf8_pct(buf, c.to_int())
       i = i + 1
     }
   }
@@ -108,55 +147,75 @@ fn decode_unreserved(s : String) -> String {
 /// 匹配**从路径第一个字节开始**。末尾 `$` 锚定结尾；没有 `$` 时是前缀匹配
 /// ——模式耗尽即成功，不允许模式出现在路径中间。旧实现把无 `*` 的模式当成
 /// 子串搜索，导致 `Allow: /public` 错误放行 `/secret/public`。
+///
+/// 实现是双指针 + 单点回溯：`star_pi` 记住最近一个 `*` 的位置，失配时让它
+/// 多吃一个字符重试。每轮迭代必定推进 `pi`、`si` 或 `star_si` 之一，因此
+/// 总步数有上界，**不会指数爆炸**。早先的逐字符递归版本在 `a*a*a*…` 这类
+/// 模式上组合数按 `C(n, k)` 增长，一个 34 字符的规则就能让匹配挂住数十秒
+/// （见 `regression_test.mbt` 的 DoS 用例）。
 fn glob_match(pattern : String, path : String) -> Bool {
   let pc = chars_of(pattern)
-  let mut plen : Int32 = pc.length()
-  let mut anchored : Bool = false
-  if plen > 0 && pc[plen - 1] == '$' {
-    anchored = true
-    plen = plen - 1
-  }
+  let plen0 : Int32 = pc.length()
+  let anchored : Bool = plen0 > 0 && pc[plen0 - 1] == '$'
+  let plen : Int32 = if anchored { plen0 - 1 } else { plen0 }
   let sc = chars_of(path)
-  glob_at(pc, plen, 0, sc, sc.length(), 0, anchored)
-}
-
-///|
-/// 回溯匹配：`pi` 为模式位置，`si` 为路径位置。
-fn glob_at(
-  pc : Array[Char],
-  plen : Int32,
-  pi : Int32,
-  sc : Array[Char],
-  slen : Int32,
-  si : Int32,
-  anchored : Bool,
-) -> Bool {
-  if pi >= plen {
-    // 模式耗尽：非锚定即前缀匹配成功；锚定要求路径也到头
-    return if anchored { si >= slen } else { true }
-  }
-  if pc[pi] == '*' {
-    // 合并连续的 '*'，避免无谓回溯
-    let mut next = pi + 1
-    while next < plen && pc[next] == '*' {
-      next = next + 1
-    }
-    let mut k = si
-    while k <= slen {
-      if glob_at(pc, plen, next, sc, slen, k, anchored) {
+  let slen : Int32 = sc.length()
+  let mut pi : Int32 = 0
+  let mut si : Int32 = 0
+  let mut star_pi : Int32 = -1
+  let mut star_si : Int32 = 0
+  // 上界：每步至少推进一个指针，留出余量
+  let mut steps : Int32 = 0
+  let max_steps : Int32 = (plen + 1) * 2 + (slen + 1) * 2 + 8
+  while steps <= max_steps {
+    steps = steps + 1
+    if pi >= plen {
+      if !anchored {
+        // 前缀匹配：模式已用完，剩余路径不参与比较
         return true
       }
-      k = k + 1
+      if si >= slen {
+        return true
+      }
+      // 锚定但路径还有剩余：让最近的 `*` 多吃一个字符再试
+      if star_pi < 0 {
+        return false
+      }
+      star_si = star_si + 1
+      if star_si > slen {
+        return false
+      }
+      si = star_si
+      pi = star_pi + 1
+      continue
     }
-    return false
+    if si >= slen {
+      // 路径耗尽：模式剩余部分必须全是 `*`
+      if pc[pi] == '*' {
+        pi = pi + 1
+        continue
+      }
+      return false
+    }
+    if pc[pi] == '*' {
+      star_pi = pi
+      star_si = si
+      pi = pi + 1
+    } else if pc[pi] == sc[si] {
+      pi = pi + 1
+      si = si + 1
+    } else if star_pi >= 0 {
+      star_si = star_si + 1
+      if star_si > slen {
+        return false
+      }
+      si = star_si
+      pi = star_pi + 1
+    } else {
+      return false
+    }
   }
-  if si >= slen {
-    return false
-  }
-  if sc[si] != pc[pi] {
-    return false
-  }
-  glob_at(pc, plen, pi + 1, sc, slen, si + 1, anchored)
+  false
 }
 
 ///|
@@ -210,10 +269,10 @@ fn strip_leading_noise(text : String) -> String {
 }
 
 ///|
-/// 依据待归属的 UA 列表创建新组；无 UA 声明时归入隐式 * 组。
+/// 依据待归属的 UA 列表创建新组。调用方保证 `pending` 非空——
+/// 不属于任何组的裸规则按 RFC 9309 §2.2.2 直接忽略，不会落到这里。
 fn new_group(pending : Array[String]) -> AgentGroup {
-  let agents = if pending.length() > 0 { pending } else { ["*"] }
-  { agents, rules: [], crawl_delay_ms: None, }
+  { agents: pending, rules: [], crawl_delay_ms: None, }
 }
 
 ///|
@@ -265,31 +324,45 @@ pub fn parse_robots(text : String) -> RobotsRules {
             }
           "disallow" | "allow" => {
             let allow = key == "allow"
+            let mut in_group : Bool = true
             if cur is None {
-              let g = new_group(pending)
-              groups.push(g)
-              cur = Some(g)
-              pending = []
+              if pending.length() == 0 {
+                // RFC 9309 §2.2.2：不属于任何组的规则 SHOULD 被忽略。
+                // 若在此处兜底成 `*` 组，文件开头的裸规则会意外生效。
+                in_group = false
+              } else {
+                let g = new_group(pending)
+                groups.push(g)
+                cur = Some(g)
+                pending = []
+              }
             }
-            if value != "" {
+            if in_group && value != "" {
               match cur {
                 Some(g) => {
-                  let _ = g.rules.push((allow, decode_unreserved(value)))
+                  let _ = g.rules.push((allow, normalize_compare_form(value)))
                 }
                 None => ()
               }
             }
           }
           "crawl-delay" => {
+            let mut in_group : Bool = true
             if cur is None {
-              let g = new_group(pending)
-              groups.push(g)
-              cur = Some(g)
-              pending = []
+              if pending.length() == 0 {
+                in_group = false
+              } else {
+                let g = new_group(pending)
+                groups.push(g)
+                cur = Some(g)
+                pending = []
+              }
             }
-            match cur {
-              Some(g) => g.crawl_delay_ms = parse_delay_ms(value)
-              None => ()
+            if in_group {
+              match cur {
+                Some(g) => g.crawl_delay_ms = parse_delay_ms(value)
+                None => ()
+              }
             }
           }
           "sitemap" => if value != "" { sitemaps.push(value) }
@@ -433,11 +506,16 @@ priv struct EffectiveRules {
 }
 
 ///|
-/// 按 RFC 9309 §2.2.1 选出并合并适用组：
+/// 按 RFC 9309 §2.2.1 选出适用组并合并：
 /// 1. 所有与 product token 前缀匹配的组里，取最长的 token 长度；
 /// 2. 长度等于该值的**全部**组合并（同名 UA 分散在多处时规则累加）；
 /// 3. 没有任何具体匹配时，合并全部 `*` 组；
 /// 4. 都没有则为空规则集（无规则适用 → 允许）。
+///
+/// 第 1 步是对 RFC 字面表述的**有意偏离**：RFC 要求「所有匹配的组合并」，
+/// 不区分 token 长度。这里采用最长优先（与 Google 等主流实现一致），
+/// 代价是更具体的组可以豁免更宽泛的组所禁止的路径。取舍与可观测差异见
+/// `docs/rfc9309-覆盖声明.md` §1.1。
 fn effective_rules(rules : RobotsRules, agent : String) -> EffectiveRules {
   let a = lower_str(agent)
   let mut best_len : Int32 = -1
@@ -481,6 +559,9 @@ fn is_robots_txt_path(path : String) -> Bool {
 ///|
 /// 判定 agent 是否允许抓取 path（含 "?query"，不含 host 与 fragment）。
 /// 无匹配组、组内无规则或路径为 /robots.txt 时允许。
+///
+/// 规则与 path 都先过 `normalize_compare_form`，比较的是同一编码形式，
+/// 因此 `%7E`/`~`、`café`/`caf%C3%A9` 视为同一路径，`%2F` 与 `/` 保持不同。
 pub fn RobotsRules::allowed(
   self : RobotsRules,
   agent : String,
@@ -493,12 +574,12 @@ pub fn RobotsRules::allowed(
   if eff.rules.length() == 0 {
     return true
   }
-  let path_octets = decode_unreserved(path)
+  let path_form = normalize_compare_form(path)
   let mut best_len : Int32 = -1
   let mut verdict : Bool = true
   for entry in eff.rules {
     let (allow, pat) = entry
-    if glob_match(pat, path_octets) {
+    if glob_match(pat, path_form) {
       let plen = chars_of(pat).length()
       if plen > best_len || (plen == best_len && allow) {
         best_len = plen
