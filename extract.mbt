@@ -4,16 +4,41 @@
 // 引擎对抓到的页面逐一调用；脚本与样式子树不参与正文。
 
 ///|
-/// 收集页面中所有 <a href> 的原始值（文档顺序，未解析）。
-pub fn extract_links(html : String) -> Array[String] {
-  let out : Array[String] = []
-  let doc = @html.parse(html)
-  walk_links(doc, doc.document_element, out)
-  out
+/// 一页的提取结果：链接、标题与 `<base href>`。
+pub(all) struct PageExtract {
+  links : Array[String]
+  title : String?
+  base_href : String?
 }
 
 ///|
-fn walk_links(doc : @html.Document, node : Int32, out : Array[String]) -> Unit {
+/// 单次解析同时提取链接、标题与 `<base href>`。
+///
+/// 引擎每页只需调用它一次：分开调 `extract_links` 与 `extract_title` 会让
+/// 同一份文档被 HTML 解析器处理两遍，大页面上是纯浪费。
+///
+/// `base_href` 取文档中第一个带非空 href 的 `<base>`（HTML5 语义），
+/// 调用方应把它相对页面 URL 解析后再用它展开其它相对链接。
+pub fn extract_page(html : String) -> PageExtract {
+  let doc = @html.parse(html)
+  let links : Array[String] = []
+  let bases : Array[String] = []
+  walk_page(doc, doc.document_element, links, bases)
+  let title = match find_title(doc, doc.document_element) {
+    Some(t) => Some(trim_str(t))
+    None => None
+  }
+  let base_href = if bases.length() > 0 { Some(bases[0]) } else { None }
+  { links, title, base_href, }
+}
+
+///|
+fn walk_page(
+  doc : @html.Document,
+  node : Int32,
+  links : Array[String],
+  bases : Array[String],
+) -> Unit {
   if node < 0 {
     return
   }
@@ -22,17 +47,29 @@ fn walk_links(doc : @html.Document, node : Int32, out : Array[String]) -> Unit {
       if doc.is_html_element(node, "a") {
         match get_attr(el, "href") {
           Some(href) => {
-            let _ = out.push(href)
+            let _ = links.push(href)
           }
+          None => ()
+        }
+      } else if doc.is_html_element(node, "base") && bases.length() == 0 {
+        // HTML5：只认第一个带非空 href 的 <base>
+        match get_attr(el, "href") {
+          Some(href) => if href != "" { let _ = bases.push(href) }
           None => ()
         }
       }
       for child in el.children {
-        walk_links(doc, child, out)
+        walk_page(doc, child, links, bases)
       }
     }
     _ => ()
   }
+}
+
+///|
+/// 收集页面中所有 <a href> 的原始值（文档顺序，未解析）。
+pub fn extract_links(html : String) -> Array[String] {
+  extract_page(html).links
 }
 
 ///|
@@ -49,11 +86,13 @@ fn get_attr(el : @html.Element, name : String) -> String? {
 ///|
 /// 提取 <title> 文本（去实体、去首尾空白）。无 title 返回 None。
 pub fn extract_title(html : String) -> String? {
-  let doc = @html.parse(html)
-  match find_title(doc, doc.document_element) {
-    Some(t) => Some(trim_str(t))
-    None => None
-  }
+  extract_page(html).title
+}
+
+///|
+/// 提取文档中第一个 `<base href>` 的原始值。没有则返回 None。
+pub fn extract_base_href(html : String) -> String? {
+  extract_page(html).base_href
 }
 
 ///|

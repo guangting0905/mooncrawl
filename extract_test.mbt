@@ -49,3 +49,30 @@ test "extract: 标签属性顺序无关 href 提取" {
   assert_eq(links.length(), 1)
   assert_eq(links[0], "/z")
 }
+
+///|
+test "extract: base href 取第一个非空值" {
+  let html = "<head><base href=\"/catalogue/\"><base href=\"/ignored/\"></head>" +
+    "<body><a href=\"a.html\">a</a></body>"
+  let page = @mooncrawl.extract_page(html)
+  assert_eq(page.base_href, Some("/catalogue/"))
+  assert_eq(page.links.length(), 1)
+  // 没有 base 时返回 None
+  assert_eq(
+    @mooncrawl.extract_base_href("<body><a href=\"x\">x</a></body>"),
+    None,
+  )
+  // 空 href 不算
+  assert_eq(@mooncrawl.extract_base_href("<head><base href=\"\"></head>"), None)
+}
+
+///|
+test "extract: extract_page 与单独入口结果一致" {
+  let html = "<html><head><title> T </title></head><body>" +
+    "<a href=\"/a\">a</a><a href=\"b\">b</a></body></html>"
+  let page = @mooncrawl.extract_page(html)
+  assert_eq(page.title, Some("T"))
+  assert_eq(page.links, @mooncrawl.extract_links(html))
+  assert_eq(page.title, @mooncrawl.extract_title(html))
+  assert_eq(page.links.length(), 2)
+}
