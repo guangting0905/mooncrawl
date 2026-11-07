@@ -22,8 +22,22 @@ pub struct Bloom {
 ///
 /// 每元素分配 16 位、7 个哈希函数，理论误报率
 /// `(1 - e^(-7/16))^7 ≈ 0.070%`；10 万元素约 200 KiB。
+///
+/// 容量一旦超出预期，误报率会迅速上升（超过容量 5 倍时接近 40%），
+/// 表现为「把没见过的 URL 当成见过而丢弃」。调用方应通过
+/// `saturation_permille()` 观察实际负载，必要时重建更大的过滤器。
+/// 位数组上限 32 MiB（约 1670 万元素），避免 Int32 乘法溢出。
 pub fn Bloom::new(expected_items : Int32) -> Bloom {
-  let bits = if expected_items < 64 { 1024 } else { expected_items * 16 }
+  let want : Int32 = if expected_items < 1 { 1 } else { expected_items }
+  let bits_wanted : Int64 = want.to_int64() * 16L
+  let bits_cap : Int64 = 268_435_456L
+  let bits : Int32 = if bits_wanted > bits_cap {
+    bits_cap.to_int()
+  } else if bits_wanted < 1024L {
+    1024
+  } else {
+    bits_wanted.to_int()
+  }
   let word_count = (bits + 63) / 64
   let words : Array[UInt64] = []
   let mut i = 0
@@ -32,6 +46,34 @@ pub fn Bloom::new(expected_items : Int32) -> Bloom {
     i = i + 1
   }
   { words, m: word_count * 64, k: 7, }
+}
+
+///|
+/// 单字的置位数量（SWAR popcount）。
+fn popcount64(x : UInt64) -> Int32 {
+  let mut v = x
+  v = v - ((v >> 1) & 0x5555555555555555UL)
+  v = (v & 0x3333333333333333UL) + ((v >> 2) & 0x3333333333333333UL)
+  v = (v + (v >> 4)) & 0x0F0F0F0F0F0F0F0FUL
+  ((v * 0x0101010101010101UL) >> 56).to_int()
+}
+
+///|
+/// 位数组的填充率（千分比，0–1000）。
+///
+/// 设计容量内应远低于 500；接近 1000 时几乎每个新键都会被误判为已见，
+/// 调用方应停止扩充并重建更大的过滤器。O(位数组字数)，十万级容量下
+/// 约 1 微秒。
+pub fn Bloom::saturation_permille(self : Bloom) -> Int32 {
+  let mut set : Int64 = 0L
+  for w in self.words {
+    set = set + popcount64(w).to_int64()
+  }
+  let total : Int64 = self.m.to_int64()
+  if total <= 0L {
+    return 0
+  }
+  (set * 1000L / total).to_int()
 }
 
 ///|
