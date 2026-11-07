@@ -242,7 +242,10 @@ fn is_default_port(scheme : String, p : Int32) -> Bool {
 }
 
 ///|
-/// 折叠路径中的 '.' / '..' 段与重复斜杠，保留结尾斜杠语义。
+/// 折叠路径中的 `.` / `..` 段。
+///
+/// **保留空段**（连续的 `/`）：`/a//b` 与 `/a/b` 在 RFC 3986 意义上不是同一个
+/// 资源，折叠它就是改写请求目标。这里只处理点段，不动斜杠。
 fn normalize_path(p : String) -> String {
   let cs = chars_of(p)
   let n : Int32 = cs.length()
@@ -252,22 +255,15 @@ fn normalize_path(p : String) -> String {
   let segs : Array[String] = []
   let mut start : Int32 = 1
   let mut i : Int32 = 1
-  let mut trailing : Bool = false
   while i <= n {
     if i == n || cs[i] == '/' {
-      if i > start {
-        let seg = slice(cs, start, i)
-        if seg == ".." {
-          if segs.length() > 0 {
-            let _ = segs.pop()
-          }
-        } else if seg != "." {
-          segs.push(seg)
+      let seg = if i > start { slice(cs, start, i) } else { "" }
+      if seg == ".." {
+        if segs.length() > 0 {
+          let _ = segs.pop()
         }
-      }
-      trailing = i == n && n > 1 && cs[n - 1] == '/'
-      if i == n {
-        break
+      } else if seg != "." {
+        segs.push(seg)
       }
       i = i + 1
       start = i
@@ -276,17 +272,13 @@ fn normalize_path(p : String) -> String {
     }
   }
   let buf = StringBuilder()
-  let mut first : Bool = true
   for seg in segs {
-    if !first {
-      buf.write_string("/")
-    }
+    buf.write_char('/')
     buf.write_string(seg)
-    first = false
   }
-  let out = "/" + buf.to_string()
-  if trailing && out != "/" {
-    out + "/"
+  let out = buf.to_string()
+  if out == "" {
+    "/"
   } else {
     out
   }

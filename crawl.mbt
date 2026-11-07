@@ -228,7 +228,15 @@ pub async fn crawl(
       if options.respect_robots && robots_tried.get(origin) is None {
         let robots_url = origin + "/robots.txt"
         polite.gate(origin)
-        let out = fetch(robots_url, options.user_agent)
+        // 传输层若抛异常，折叠成"不可达"，交给下面的状态码语义处理
+        let out = fetch(robots_url, options.user_agent) catch {
+          e =>
+            {
+              status: 0,
+              body: "",
+              error: Some("robots fetch error: " + e.to_string()),
+            }
+        }
         let _ = robots_tried.set(origin, true)
         let robots_down = match out.error {
           Some(_) => true
@@ -304,7 +312,15 @@ pub async fn crawl(
       let origin = ready_origins[k]
       tasks.push(async fn() -> FetchOutcome {
         polite.gate(origin)
-        fetch(url, options.user_agent)
+        // 单页异常只影响该页：记为失败并继续，不中断整批
+        fetch(url, options.user_agent) catch {
+          e =>
+            {
+              status: 0,
+              body: "",
+              error: Some("fetch error: " + e.to_string()),
+            }
+        }
       })
       k = k + 1
     }

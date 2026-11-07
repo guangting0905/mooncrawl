@@ -103,104 +103,60 @@ fn decode_unreserved(s : String) -> String {
 }
 
 ///|
-/// 逐字节（字符）匹配：`*` 匹配任意序列，结尾 `$` 锚定。
+/// robots 模式匹配（RFC 9309 §2.2.2）。
+///
+/// 匹配**从路径第一个字节开始**。末尾 `$` 锚定结尾；没有 `$` 时是前缀匹配
+/// ——模式耗尽即成功，不允许模式出现在路径中间。旧实现把无 `*` 的模式当成
+/// 子串搜索，导致 `Allow: /public` 错误放行 `/secret/public`。
 fn glob_match(pattern : String, path : String) -> Bool {
-  let mut pat = pattern
-  let mut anchored : Bool = false
   let pc = chars_of(pattern)
-  if pc.length() > 0 && pc[pc.length() - 1] == '$' {
+  let mut plen : Int32 = pc.length()
+  let mut anchored : Bool = false
+  if plen > 0 && pc[plen - 1] == '$' {
     anchored = true
-    pat = slice(pc, 0, pc.length() - 1)
+    plen = plen - 1
   }
-  // 按 '*' 切分模式段
-  let pcs = chars_of(pat)
-  let segs : Array[Array[Char]] = []
-  let mut start : Int32 = 0
-  let mut i : Int32 = 0
-  while i <= pcs.length() {
-    if i == pcs.length() || pcs[i] == '*' {
-      segs.push(subarray(pcs, start, i))
-      if i < pcs.length() {
-        i = i + 1
-      } else {
-        break
-      }
-      start = i
-    } else {
-      i = i + 1
-    }
-  }
-  let a = chars_of(path)
-  return glob_segs_match(segs, 0, a, 0, anchored)
+  let sc = chars_of(path)
+  glob_at(pc, plen, 0, sc, sc.length(), 0, anchored)
 }
 
 ///|
-fn subarray(cs : Array[Char], a : Int32, b : Int32) -> Array[Char] {
-  let out : Array[Char] = []
-  let mut i : Int32 = a
-  while i < b {
-    out.push(cs[i])
-    i = i + 1
-  }
-  out
-}
-
-///|
-fn seg_eq(cs : Array[Char], pos : Int32, seg : Array[Char]) -> Bool {
-  if pos + seg.length() > cs.length() {
-    return false
-  }
-  let mut j : Int32 = 0
-  while j < seg.length() {
-    if cs[pos + j] != seg[j] {
-      return false
-    }
-    j = j + 1
-  }
-  true
-}
-
-///|
-/// 依次消费模式段：非末段用「找子串并推进」处理，末段按锚定语义收尾。
-fn glob_segs_match(
-  segs : Array[Array[Char]],
+/// 回溯匹配：`pi` 为模式位置，`si` 为路径位置。
+fn glob_at(
+  pc : Array[Char],
+  plen : Int32,
+  pi : Int32,
+  sc : Array[Char],
+  slen : Int32,
   si : Int32,
-  path : Array[Char],
-  pos : Int32,
   anchored : Bool,
 ) -> Bool {
-  if si == segs.length() - 1 {
-    let last = segs[si]
-    if anchored {
-      return pos + last.length() == path.length() && seg_eq(path, pos, last)
+  if pi >= plen {
+    // 模式耗尽：非锚定即前缀匹配成功；锚定要求路径也到头
+    return if anchored { si >= slen } else { true }
+  }
+  if pc[pi] == '*' {
+    // 合并连续的 '*'，避免无谓回溯
+    let mut next = pi + 1
+    while next < plen && pc[next] == '*' {
+      next = next + 1
     }
-    // 非锚定：last 段允许出现在 pos 之后的任意位置
-    let mut p = pos
-    while p + last.length() <= path.length() {
-      if seg_eq(path, p, last) {
+    let mut k = si
+    while k <= slen {
+      if glob_at(pc, plen, next, sc, slen, k, anchored) {
         return true
       }
-      p = p + 1
-    }
-    return last.length() == 0
-  }
-  let seg = segs[si]
-  if !seg_eq(path, pos, seg) {
-    return false
-  }
-  let next = pos + seg.length()
-  if si + 1 <= segs.length() - 1 {
-    // 中间段：尝试所有可能的下一段起点（由后续递归处理）
-    let mut p = next
-    while p <= path.length() {
-      if glob_segs_match(segs, si + 1, path, p, anchored) {
-        return true
-      }
-      p = p + 1
+      k = k + 1
     }
     return false
   }
-  glob_segs_match(segs, si + 1, path, next, anchored)
+  if si >= slen {
+    return false
+  }
+  if sc[si] != pc[pi] {
+    return false
+  }
+  glob_at(pc, plen, pi + 1, sc, slen, si + 1, anchored)
 }
 
 ///|

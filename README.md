@@ -4,11 +4,11 @@
 
 **MoonBit 的网页爬虫框架** —— 2026 MoonBit 黑客松 10 月赛参赛项目。
 
-已发布到 mooncakes.io：`guangting0905/mooncrawl@0.1.2`
+已发布到 mooncakes.io：`guangting0905/mooncrawl@0.1.3`
 （[文档](https://mooncakes.io/docs/guangting0905/mooncrawl)）
 
 ```bash
-moon add guangting0905/mooncrawl@0.1.2
+moon add guangting0905/mooncrawl@0.1.3
 ```
 
 MoonCrawl 把「抓网页 → 提数据 → 出结果」串成一条可复用流水线：URL 规范化、
@@ -40,13 +40,13 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 作为依赖：
 
 ```bash
-moon add guangting0905/mooncrawl@0.1.2
+moon add guangting0905/mooncrawl@0.1.3
 ```
 
 从源码构建与测试：
 
 ```bash
-moon test --target js     # 82 个离线测试
+moon test --target js     # 85 个离线测试
 moon run cmd/main --target js -- https://books.toscrape.com/ --max-pages 12 --depth 1
 ```
 
@@ -61,8 +61,9 @@ CI 在两种后端上都执行全量测试。
 
 - 解析绝对 http/https URL：scheme/host 小写化、userinfo 剥离、IPv6 字面量、
   端口校验、fragment 丢弃；
-- 规范化：折叠 RFC 3986 §6.2.2 意义上的语法等价（大小写、默认端口、点段、
-  fragment），**默认保留查询参数原始顺序**；
+- 规范化：只折叠 RFC 3986 §6.2.2 意义上的语法等价——scheme/host 大小写、
+  默认端口、点段（`.`/`..`）、fragment；**保留查询参数顺序与重复斜杠**
+  （`/a//b` 与 `/a/b` 在规范里不是同一资源，折叠它就改写了请求目标）；
 - 相对地址展开：同目录、根相对、scheme 相对、查询相对，`javascript:`/`mailto:`
   等外部 scheme 拒绝解析；
 - 显式的 `normalize_url_sorted_query`：仅当调用方确认站点把 query 当无序
@@ -74,7 +75,8 @@ CI 在两种后端上都执行全量测试。
 **[docs/rfc9309-覆盖声明.md](docs/rfc9309-覆盖声明.md)**：
 
 - §2.2.1 组选择：大小写不敏感前缀匹配、**多组匹配时合并**、`*` 组回退；
-- §2.2.2 匹配：从首字节匹配、最长模式优先、等长 Allow 优先、`/robots.txt` 隐式允许；
+- §2.2.2 匹配：从路径首字节起做**前缀匹配**（模式不得命中路径中段）、
+  最长模式优先、等长 Allow 优先、`/robots.txt` 隐式允许；
 - §2.2.3 特殊字符：`#` 注释、`*` 通配、`$` 锚定；
 - §2.2.2 百分号解码：比较前解码 unreserved 字符的 `%XX`（`%7E` 与 `~` 视为同一
   路径），`%2F` 等保留字符不解码；
@@ -223,10 +225,11 @@ while 未达页数上限 {
 | 选择器 | `selector.mbt` | CSS 子集、字段映射、逐容器成表 | 10 |
 | 导出 | `export.mbt` | CSV（RFC 4180）、JSONL、通用字段行 | 7 |
 | 边界 | `boundary_test.mbt` | 跨模块边界用例（URL/robots/选择器/十万元素） | 5 |
+| 回归 | `regression_test.mbt` | 验收反馈三条（robots 前缀语义、重复斜杠、传输异常） | 3 |
 | 传输 | `fetch_http.mbt` | 官方 async http 适配：30s 超时、UA 透传 | — |
 | CLI | `cmd/main` | 页面模式 / 采集模式 | — |
 
-**82 个测试全部离线**：引擎对内存假站点运行（注入 fetch 闭包），
+**85 个测试全部离线**：引擎对内存假站点运行（注入 fetch 闭包），
 不依赖网络与时钟，CI 在 js 与 native 双后端执行全量测试 + `moon fmt` 门禁。
 
 ## 已知限制
@@ -244,6 +247,8 @@ while 未达页数上限 {
 5. **不做 XPath**。选择器只覆盖 CSS 子集。
 6. **单机内存队列**。URL 全量驻留内存（布隆过滤器只做去重），不支持分布式调度。
 7. **同 origin 串行**。跨 origin 才并行；单站点抓取的吞吐受 `delay_ms` 限制。
+8. **重复斜杠不折叠**。`/a//b` 与 `/a/b` 视为不同 URL，可能重复抓取。
+   这是有意为之：RFC 3986 的语法等价不含折叠空段，动了就改写了请求目标。
 
 ## 工程实践
 
@@ -274,7 +279,7 @@ awesome-moonbit 官方清单无同类条目；往期黑客松 22 个参赛项目
 - [x] JSONL/CSV 导出（D5）
 - [x] 真实站点演示 + CLI 双模式（D5）
 - [x] CI 双目标门禁（D6）
-- [x] mooncakes.io 上架（`guangting0905/mooncrawl` v0.1.2，`moon publish` 已通过）
+- [x] mooncakes.io 上架（`guangting0905/mooncrawl` v0.1.3，`moon publish` 已通过）
 
 后续方向（季度/年度持续建设）：
 

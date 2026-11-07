@@ -15,13 +15,13 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 ## 核心功能范围
 
-- 提供 URL 解析、规范化与相对地址展开（RFC 3986 实用子集）：scheme/host 小写化、默认端口省略、点段折叠、fragment 剥离，以及同目录、根相对、scheme 相对、查询相对的地址展开，`javascript:`/`mailto:` 等外部 scheme 拒绝解析；
+- 提供 URL 解析、规范化与相对地址展开（RFC 3986 实用子集）：scheme/host 小写化、默认端口省略、点段折叠、fragment 剥离，以及同目录、根相对、scheme 相对、查询相对的地址展开，`javascript:`/`mailto:` 等外部 scheme 拒绝解析；**重复斜杠与查询参数顺序不折叠**——二者不属于 RFC 3986 §6.2.2 的语法等价，折叠会改写请求目标；
 
 - 提供保守的等价判定策略：默认只折叠 RFC 3986 §6.2.2 意义上的语法等价，**保留查询参数原始顺序**（参数顺序在部分服务端是语义，不默认视为同一资源）；需要按无序多重集去重的调用方，显式使用 `normalize_url_sorted_query`；
 
 - 提供布隆过滤器去重模块（每元素 16 bit、7 哈希、理论误报率约 0.07%，位用 UInt64 手工打包，十万 URL 约 200 KiB），支撑十万级 URL 的内存可控去重；
 
-- 提供 robots.txt 解析与匹配（RFC 9309）：User-agent 分组大小写不敏感前缀匹配、多个组匹配同一 UA 时合并、Allow/Disallow 最长模式优先与等长 Allow 优先、`*` 与 `$` 通配、比较前解码 unreserved 字符的百分号编码、`/robots.txt` 隐式允许、Crawl-delay 毫秒化解析与 Sitemap 收集；
+- 提供 robots.txt 解析与匹配（RFC 9309）：User-agent 分组大小写不敏感前缀匹配、多个组匹配同一 UA 时合并、路径匹配为从首字节起的**前缀匹配**（模式不得命中路径中段）、Allow/Disallow 最长模式优先与等长 Allow 优先、`*` 与 `$` 通配、比较前解码 unreserved 字符的百分号编码、`/robots.txt` 隐式允许、Crawl-delay 毫秒化解析与 Sitemap 收集；
 
 - 提供 robots.txt 状态码语义（RFC 9309 §2.3.1）：2xx 解析执行、4xx 视为不可用并放行、**5xx 与网络错误默认视为完全禁止**（可按需显式改为放行），解析上限 1 MiB（截断后前部规则照常生效）；未覆盖项（重定向链、缓存时效）在 docs/rfc9309-覆盖声明.md 中逐条列明；
 
@@ -29,7 +29,7 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - 提供异步抓取引擎 `crawl(...)`：深度与页数上限、按 origin 记账的礼貌限速（robots Crawl-delay 自动抬高间隔）、三阶段调度（串行准入判定 → 跨 origin 并行抓取 → 串行提取入队）、跨 origin 并行度可配（`max_concurrency`，同 origin 始终串行），以及抓取/成功/失败/robots 拒绝/不可达拒绝/发现链接等统计计数；
 
-- 提供可注入传输层（`FetchFn` 闭包）与默认实现 `http_fetch`（基于 moonbitlang/async/http：30 秒超时、User-Agent 透传、协议错误与超时统一折叠），引擎可在无网络、无时钟依赖的离线环境下对假站点确定性测试；
+- 提供可注入传输层（`FetchFn` 闭包）与默认实现 `http_fetch`（基于 moonbitlang/async/http：30 秒超时、User-Agent 透传），协议错误、超时与底层抛出的异常统一折叠为单页失败（`status=0 + error`），不中断整次采集；引擎可在无网络、无时钟依赖的离线环境下对假站点确定性测试；
 
 - 提供 HTML 提取能力（基于 moonbit-community/html）：`<a href>` 链接按文档顺序收集、`<title>` 提取（实体解码、去首尾空白）、正文文本提取（跳过 script/style/noscript 子树并折叠空白）；
 
@@ -39,7 +39,7 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - 提供命令行入口 `mooncrawl`（moonbitlang/core/argparse）两种模式：页面模式输出每页元数据，采集模式经 `--container` 与 `--fields` 按选择器逐条提取记录，并把字段值中的相对链接自动展开为绝对 URL；
 
-- 提供 82 个 MoonBit 测试并持续保持核心回归测试通过，其中引擎与调度用例全部离线运行（注入假 fetcher，不依赖网络与时钟）；GitHub Actions CI 在 js 与 native 双后端执行全量测试与 moon fmt 格式门禁（wasm-gc 不支持：引擎依赖的 moonbitlang/async/http 无 wasm 实现）；
+- 提供 85 个 MoonBit 测试并持续保持核心回归测试通过，其中引擎与调度用例全部离线运行（注入假 fetcher，不依赖网络与时钟）；GitHub Actions CI 在 js 与 native 双后端执行全量测试与 moon fmt 格式门禁（wasm-gc 不支持：引擎依赖的 moonbitlang/async/http 无 wasm 实现）；
 
 - 提供 README 示例，覆盖库调用（规范化/展开/去重/robots/选择器/引擎）与 CLI 双模式的真实输出，以及架构图、模块-测试对照表与已知限制清单；并提供 docs/rfc9309-覆盖声明.md 作为 robots 处理的外部一致性证据。
 
@@ -63,6 +63,8 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - **开源合规**：Apache-2.0，LICENSE 全文入库；新增 NOTICE，列明第三方组件（moonbitlang/async、moonbit-community/html，均 Apache-2.0，Copyright 2025 International Digital Economy Academy）与所引用的规范（RFC 3986 / 9309 / 4180）；`.moonignore` 控制打包范围，参赛材料不随包分发。
 
+- **正式验收反馈的修复（2026-11-07）**：① robots 路径匹配改为严格前缀语义，`Disallow: /` 配 `Allow: /public` 不再误放行 `/secret/public`（原实现把无 `*` 的模式当子串搜索）；② 路径规范化保留重复斜杠，只折叠点段，不再把 `/a//b` 改写成 `/a/b`；③ 默认传输层与引擎两侧都捕获异常，单页失败折叠为 `status=0 + error`，不再终止整次采集。三条均有回归测试（`regression_test.mbt`）。
+
 - **已知限制**（完整清单见 README「已知限制」）：查询参数顺序默认不折叠，同一资源可能被抓两次；robots 的重定向链与缓存时效不处理；不做 JS 渲染与 XPath；单机内存队列，不支持分布式调度；同 origin 串行，单站点吞吐受 `delay_ms` 限制。
 
-- **验证**：`moon test --target js` 82 个用例全部通过；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.2，`moon add guangting0905/mooncrawl@0.1.2` 可安装）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。
+- **验证**：`moon test --target js` 85 个用例全部通过；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.3，`moon add guangting0905/mooncrawl@0.1.3` 可安装）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。
