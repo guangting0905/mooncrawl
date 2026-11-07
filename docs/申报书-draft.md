@@ -55,7 +55,7 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - **项目定位调整为通用爬虫框架**：「声明式网页采集」不再是项目定位，降为提取层的可选特性——不配置选择器时就是普通爬虫，配置后才做字段采集。
 
-- **补充自定义数据提取**：新增 CSS 选择器模块与字段映射（见核心功能范围第 10 条）。XPath 明确不做，理由写在 README 已知限制：MoonBit 生态无 XPath 实现，自研完整语义成本远高于 CSS 子集，而采集场景中 CSS 已覆盖绝大多数需求。
+- **补充自定义数据提取**：新增 CSS 选择器模块与字段映射（见核心功能范围第 10 条）。XPath 明确不做（README 已知限制第 11 条）：自研完整 XPath 语义的成本远高于 CSS 子集，而采集场景中 CSS 已覆盖绝大多数需求；若后续生态出现可复用的 XPath 实现，可另行接入，本项目不重复造这一层。
 
 - **补充异步调度**：三阶段调度 + `max_concurrency`，`Frontier::pop_batch` 保证批内每 host 最多一个 URL，同 origin 严格串行、礼貌间隔不被并发绕过。
 
@@ -67,7 +67,7 @@ MoonCrawl 为 MoonBit 生态提供通用的网页爬虫框架，把「抓网页 
 
 - **已知限制**（完整清单共 15 条，见 README「已知限制」）：查询参数顺序与重复斜杠不折叠；布隆去重是概率性的，超容量后无法与真实重复区分（已有填充率指标与告警）；不限制站外链接；robots 组选择为最长 token 优先、无法匹配字面 `*`、1 MiB 上限只约束解析；`extract_records` 的字段选择器不能引用容器外祖先；不做 JS 渲染与 XPath；单机内存队列，不支持分布式调度；同 origin 串行；无请求重试。
 
-- **验证**：`moon test --target js` 95 个用例全部通过；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.3，`moon add guangting0905/mooncrawl@0.1.3` 可安装）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接，采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。
+- **验证**：`moon test` 95 个用例全部通过（默认 js 目标）；CI 三 job（js / native / fmt）全绿；包已发布到 mooncakes.io（`guangting0905/mooncrawl` v0.1.4，`build_status: success`；`moon add guangting0905/mooncrawl@0.1.4` 已在全新项目中安装，并实际调用 `Frontier::with_capacity`、`extract_base_href`、非 ASCII robots 匹配等新 API 验证）；真实站点 books.toscrape.com 端到端验证，页面模式 12 页全部 200、发现 1,089 个链接（复审修正后复跑，数字一致），采集模式按 CSS 选择器输出书目记录（含相对链接绝对化）。
 
 - **第二轮复审修正（2026-11-07）**：上一轮之后又做了四类对抗性检查——不再只喂「顺利输入」，而是喂超规模、恶意规则和畸形语法。四处缺陷均已修复并有回归用例：
   ① **布隆去重容量写死 4096**（8 KiB），实测插入到第 2260 个唯一 URL 起开始把新链接误判为已见并静默丢弃，两万个 URL 丢 1954 个，而统计上看不出异常。改为容量可配（`Frontier::with_capacity`，默认 65536、`crawl` 按 `max_pages` 推算），新增 `saturation_permille()` 与 CLI 的 `# warning`。
