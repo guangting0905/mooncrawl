@@ -406,3 +406,52 @@ async test "crawl: max_concurrency=1 时完全串行" {
   assert_eq(peak, 1)
   assert_true(all_hit)
 }
+
+///|
+async test "crawl: 页面 base href 改变相对链接基准" {
+  let fetch = fake_site([
+    ("https://fake.test/robots.txt", ok(OPEN_ROBOTS)),
+    (
+      "https://fake.test/dir/page.html",
+      ok(
+        "<html><head><base href=\"/sub/\"></head><body><a href=\"a.html\">a</a></body></html>",
+      ),
+    ),
+    ("https://fake.test/sub/a.html", ok("<html><body>leaf</body></html>")),
+  ])
+  let stats = @mooncrawl.crawl(
+    "https://fake.test/dir/page.html",
+    {
+      ..@mooncrawl.CrawlOptions::default(),
+      max_pages: 5,
+      max_depth: 1,
+      delay_ms: 0,
+    },
+    fetch,
+    fn(_p) { () },
+  )
+  // 有 base 时 a.html 解析为 /sub/a.html（命中）；无 base 会变成 /dir/a.html
+  assert_eq(stats.pages_ok, 2)
+}
+
+///|
+async test "crawl: 统计暴露去重位数组饱和度" {
+  let fetch = fake_site([
+    ("https://fake.test/robots.txt", ok(OPEN_ROBOTS)),
+    ("https://fake.test/", ok("<html><body>leaf</body></html>")),
+  ])
+  let stats = @mooncrawl.crawl(
+    "https://fake.test/",
+    {
+      ..@mooncrawl.CrawlOptions::default(),
+      max_pages: 5,
+      max_depth: 0,
+      delay_ms: 0,
+    },
+    fetch,
+    fn(_p) { () },
+  )
+  // 小任务填充率应远低于告警阈值
+  assert_true(stats.frontier_saturation >= 0)
+  assert_true(stats.frontier_saturation < 500)
+}

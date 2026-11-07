@@ -18,7 +18,7 @@ pub(all) struct PageResult {
   url : String // 规范化后的请求 URL
   status : Int32 // HTTP 状态码；0 表示未完成传输
   depth : Int32 // 距种子的跳数（种子为 0）
-  links_found : Int32 // 本页发现的合法站内链接数（已解析，去重前）
+  links_found : Int32 // 本页解析出的合法 http(s) 链接数（含站外，去重前）
   title : String?
   body : String? // 仅在 CrawlOptions::keep_body 为真时填充
   error : String?
@@ -79,6 +79,9 @@ pub struct CrawlStats {
   mut pages_skipped_unreachable : Int32 // 因 robots 不可达被拒的页面数
   mut links_discovered : Int32
   mut robots_unreachable : Int32 // robots.txt 不可达（5xx/网络错误）的 origin 数
+  /// 结束时去重位数组的填充率（千分比）。> 500 表示容量可能不足：部分
+  /// 未见过的 URL 会被布隆过滤器误判为已见而丢弃，且无法与真实重复区分。
+  mut frontier_saturation : Int32
 }
 
 ///|
@@ -91,6 +94,7 @@ fn CrawlStats::new() -> CrawlStats {
     pages_skipped_unreachable: 0,
     links_discovered: 0,
     robots_unreachable: 0,
+    frontier_saturation: 0,
   }
 }
 
@@ -170,11 +174,18 @@ async fn Politeness::gate(self : Politeness, origin : String) -> Unit {
 ///
 /// 三阶段结构让并发不污染共享状态：
 /// 1. 串行：robots 加载与准入判定（会修改 robots 缓存、统计、blocked）；
-/// 2. 并行：对通过准入的 URL 按 origin 礼貌等待后抓取（只读共享状态）；
+/// 2. 并行：对通过准入的 URL 按 origin 礼貌等待后抓取。此段唯一被写入的
+///    共享状态是 `Politeness.last_visit`——同一 origin 在批内最多一个任务，
+///    因此不会有两个任务同时写同一个 key；其余共享状态（frontier 除外，
+///    它只在阶段 3 写）只读。
 /// 3. 串行：处理抓取结果、提取链接、入队、统计与回调。
 ///
 /// `max_concurrency = 1` 时退化为完全串行，行为与单请求循环一致。
 /// 无效种子返回全零统计。
+///
+/// 链接筛选只要求「能解析成 http/https 的绝对地址」，**不限制同域**：
+/// 页面上的站外链接同样入队。需要限定采集范围时，请在外层按 host 过滤
+/// 回调结果，或把 `max_depth` 设为 0 只抓种子页。
 pub async fn crawl(
   seed : String,
   options : CrawlOptions,
@@ -187,7 +198,16 @@ pub async fn crawl(
     None => return stats
   }
   let seed_norm = normalize_url(seed_url)
-  let frontier = Frontier::new(options.delay_ms)
+  // 去重容量按页数上限推算：一个页面带出的唯一新 URL 通常远少于链接总数，
+  // 8 倍是保守估计。少于 1024 页时统一给 8192，避免小任务也开大位数组。
+  let expected_urls : Int32 = if options.max_pages < 1024 {
+    8192
+  } else if options.max_pages > 2_000_000 {
+    16_777_216
+  } else {
+    options.max_pages * 8
+  }
+  let frontier = Frontier::with_capacity(options.delay_ms, expected_urls)
   let depths : Map[String, Int32] = Map([], capacity=256)
   let robots_map : Map[String, RobotsRules] = Map([], capacity=16)
   let robots_tried : Map[String, Bool] = Map([], capacity=16)
@@ -355,10 +375,21 @@ pub async fn crawl(
         Some(u) => u
         None => continue
       }
-      let links = extract_links(out.body)
+      // 单次解析拿到链接、标题与 base href
+      let page = extract_page(out.body)
+      // <base href> 存在时先把基准换成它，再展开页面里的相对链接；
+      // 它自身也可能是相对路径，所以仍以页面 URL 为基准解析一次。
+      let base_url = match page.base_href {
+        Some(href) =>
+          match resolve_url(u, href) {
+            Some(b) => b
+            None => u
+          }
+        None => u
+      }
       let mut discovered : Int32 = 0
-      for href in links {
-        match resolve_url(u, href) {
+      for href in page.links {
+        match resolve_url(base_url, href) {
           Some(child) => {
             let child_norm = normalize_url(child)
             discovered = discovered + 1
@@ -377,7 +408,7 @@ pub async fn crawl(
         status: out.status,
         depth,
         links_found: discovered,
-        title: extract_title(out.body),
+        title: page.title,
         body: if options.keep_body {
           Some(out.body)
         } else {
@@ -387,5 +418,6 @@ pub async fn crawl(
       })
     }
   }
+  stats.frontier_saturation = frontier.saturation_permille()
   stats
 }

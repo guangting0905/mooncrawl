@@ -207,6 +207,27 @@ fn absolutize(base : @mooncrawl.Url, value : String) -> String {
 }
 
 ///|
+/// 输出一行 CSV，行尾为 CRLF。
+///
+/// `csv_row` 已经带 `\r\n`，但 MoonBit 只有 `println`（固定补一个 `\n`），
+/// 直接打印会多出一个空行。这里去掉原有行尾再补 `\r`，让 `println` 的
+/// `\n` 与之拼成 RFC 4180 要求的裸 CRLF。
+fn print_csv_line(row : String) -> Unit {
+  let cs : Array[Char] = []
+  for c in row {
+    cs.push(c)
+  }
+  let n = cs.length()
+  let mut end_ = n
+  if n >= 2 && cs[n - 1] == '\n' && cs[n - 2] == '\r' {
+    end_ = n - 2
+  } else if n >= 1 && cs[n - 1] == '\n' {
+    end_ = n - 1
+  }
+  println(slice_str(row, 0, end_) + "\r")
+}
+
+///|
 async fn main {
   let matches = @argparse.Command(
     "mooncrawl",
@@ -287,13 +308,28 @@ async fn main {
     for f in fields {
       names.push(f.name)
     }
-    println(@mooncrawl.csv_row(names).trim())
+    // csv_row 自带 CRLF（RFC 4180），这里用 print 而不是 println，
+    // 避免被去掉行尾后只剩 LF
+    print_csv_line(@mooncrawl.csv_row(names))
   }
   let stats = @mooncrawl.crawl(seed, options, @mooncrawl.http_fetch, fn(p) {
     if harvest {
       match p.body {
         Some(html) => {
-          let base = @mooncrawl.parse_url(p.url)
+          // <base href> 会改变相对链接的基准，采集模式必须跟随它，
+          // 否则相对地址会被拼到错误的目录下
+          let base = match @mooncrawl.parse_url(p.url) {
+            Some(u) =>
+              match @mooncrawl.extract_base_href(html) {
+                Some(h) =>
+                  match @mooncrawl.resolve_url(u, h) {
+                    Some(b) => Some(b)
+                    None => Some(u)
+                  }
+                None => Some(u)
+              }
+            None => None
+          }
           for row in @mooncrawl.extract_records(html, container, fields) {
             let cells : Array[(String, String)] = []
             for kv in row {
@@ -305,7 +341,7 @@ async fn main {
               cells.push((k, resolved))
             }
             if is_csv {
-              println(@mooncrawl.csv_record(cells).trim())
+              print_csv_line(@mooncrawl.csv_record(cells))
             } else {
               println(@mooncrawl.json_record(cells))
             }
@@ -314,11 +350,19 @@ async fn main {
         None => ()
       }
     } else if is_csv {
-      println(@mooncrawl.csv_page(p).trim())
+      print_csv_line(@mooncrawl.csv_page(p))
     } else {
       println(@mooncrawl.jsonl_page(p))
     }
   })
+  if stats.frontier_saturation > 500 {
+    // 以 # 开头，与下面的统计行一起构成「非数据行」，便于管道侧 grep -v '^#'
+    eprintln(
+      "# warning: 去重位数组填充 " +
+      stats.frontier_saturation.to_string() +
+      "‰，容量可能不足——部分未抓取的 URL 会被误判为已见而丢弃。提高 --max-pages 可获得更大容量",
+    )
+  }
   println(
     "# pages_fetched=" +
     stats.pages_fetched.to_string() +
@@ -331,6 +375,9 @@ async fn main {
     " robots_unreachable=" +
     stats.robots_unreachable.to_string() +
     " links=" +
-    stats.links_discovered.to_string(),
+    stats.links_discovered.to_string() +
+    " frontier_saturation=" +
+    stats.frontier_saturation.to_string() +
+    "‰",
   )
 }
