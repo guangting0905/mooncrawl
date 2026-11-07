@@ -16,9 +16,13 @@ pub fn csv_record_header(Array[(String, String)]) -> String
 
 pub fn csv_row(Array[String]) -> String
 
+pub fn extract_base_href(String) -> String?
+
 pub fn extract_fields(String, Array[FieldSpec]) -> Array[(String, String)]
 
 pub fn extract_links(String) -> Array[String]
+
+pub fn extract_page(String) -> PageExtract
 
 pub fn extract_records(String, String, Array[FieldSpec]) -> Array[Array[(String, String)]]
 
@@ -65,6 +69,7 @@ pub struct Bloom {
 pub fn Bloom::add(Self, String) -> Unit
 pub fn Bloom::maybe_contains(Self, String) -> Bool
 pub fn Bloom::new(Int32) -> Self
+pub fn Bloom::saturation_permille(Self) -> Int32
 
 pub(all) struct CompoundSelector {
   simples : Array[SimpleSelector]
@@ -91,6 +96,7 @@ pub struct CrawlStats {
   mut pages_skipped_unreachable : Int32
   mut links_discovered : Int32
   mut robots_unreachable : Int32
+  mut frontier_saturation : Int32
 }
 
 pub(all) struct FetchOutcome {
@@ -119,6 +125,14 @@ pub fn Frontier::pop(Self) -> String?
 pub fn Frontier::pop_batch(Self, Int32) -> Array[String]
 pub fn Frontier::push(Self, String) -> Bool
 pub fn Frontier::record_visit(Self, String, Int32) -> Unit
+pub fn Frontier::saturation_permille(Self) -> Int32
+pub fn Frontier::with_capacity(Int32, Int32) -> Self
+
+pub(all) struct PageExtract {
+  links : Array[String]
+  title : String?
+  base_href : String?
+}
 
 pub(all) struct PageResult {
   url : String
